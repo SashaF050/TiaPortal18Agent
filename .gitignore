@@ -22,5 +22,14 @@ test_*.bat
 Hello.cs
 Hello.exe
 
-# Local backups
+# Local backups and exports
 Backups/
+*.csv
+agent_settings.json
+
+# Temporary scripts & outputs
+test.*
+test_*.*
+run_test.ps1
+out*.txt
+call_tree.json

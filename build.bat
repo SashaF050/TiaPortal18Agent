@@ -1,7 +1,7 @@
 @echo off
 chcp 65001 > nul
 echo ===================================================
-echo   Building and Syncing TiaPortal18Agent v2.2.0
+echo   Building and Syncing TiaPortal18Agent v2.4.0
 echo ===================================================
 
 set CSC=C:\Windows\Microsoft.NET\Framework64\v4.0.30319\csc.exe
@@ -27,6 +27,7 @@ powershell -NoProfile -Command "try { if (Test-Path '%DESKTOP_DIR%\TiaPortal18Ag
 copy /Y "%~dp0TiaPortal18Agent.exe.config" "%DESKTOP_DIR%\" > nul
 copy /Y "%~dp0build.bat" "%DESKTOP_DIR%\" > nul
 copy /Y "%~dp0register_whitelist.ps1" "%DESKTOP_DIR%\" > nul
+if exist "%~dp0agent_settings.json" copy /Y "%~dp0agent_settings.json" "%DESKTOP_DIR%\" > nul
 if exist "%~dp0call_tree.json" copy /Y "%~dp0call_tree.json" "%DESKTOP_DIR%\" > nul
 if exist "%~dp0README.md" copy /Y "%~dp0README.md" "%DESKTOP_DIR%\" > nul
 if exist "%~dp0tia.ps1" copy /Y "%~dp0tia.ps1" "%DESKTOP_DIR%\" > nul

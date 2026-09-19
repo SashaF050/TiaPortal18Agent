@@ -409,14 +409,45 @@ namespace TiaPortal18Agent
         }
     }
 
+    public class AgentSettings
+    {
+        public string Language { get; set; }
+        public bool ExportIncludeComments { get; set; }
+        public string CsvDelimiter { get; set; }
+        public int DisplayPageSize { get; set; }
+        public bool BackupUseShortYear { get; set; }
+        public bool AutoClearConsole { get; set; }
+        public string DefaultExportFormat { get; set; }
+        public bool AutoCleanEmptyGroups { get; set; }
+        public string LastProjectPath { get; set; }
+
+        public AgentSettings()
+        {
+            string sysLang = System.Globalization.CultureInfo.CurrentUICulture.TwoLetterISOLanguageName.ToLowerInvariant();
+            Language = (sysLang == "ru") ? "ru" : "en";
+            ExportIncludeComments = true;
+            CsvDelimiter = ";";
+            DisplayPageSize = 20;
+            BackupUseShortYear = false;
+            AutoClearConsole = true;
+            DefaultExportFormat = "SimaticML XML";
+            AutoCleanEmptyGroups = true;
+            LastProjectPath = "";
+        }
+    }
+
     public class Program
     {
-        public const string AGENT_VERSION = "2.3.0";
+        public const string AGENT_VERSION = "2.4.0";
         public const string BUILD_DATE = "2026-09-20";
         public const string TIA_TARGET_VERSION = "TIA Portal V14-V20 (V18 Native)";
 
         private static TiaPortal _activeTiaPortal = null;
         private static Project _activeProject = null;
+        private static string _currentLanguage = "ru";
+        private static bool _exportIncludeComments = true;
+        private static string _csvDelimiter = ";";
+        private static string _lastProjectPath = "";
         private static bool _backupUseShortYear = false;
         private static bool _autoClearConsole = true;
         private static int _displayPageSize = 20;
@@ -424,6 +455,13 @@ namespace TiaPortal18Agent
         private static string _defaultExportFormat = "SimaticML XML";
         private static int _attachedPid = 0;
         private static JavaScriptSerializer _serializer = new JavaScriptSerializer { MaxJsonLength = 100 * 1024 * 1024 };
+
+        private static AgentSettings _settings = new AgentSettings();
+
+        public static string L(string ru, string en)
+        {
+            return string.Equals(_currentLanguage, "en", StringComparison.OrdinalIgnoreCase) ? en : ru;
+        }
 
         private static bool _watchdogRunning = false;
         private static WatchdogStatus _latestWatchdogStatus = new WatchdogStatus
@@ -542,6 +580,146 @@ namespace TiaPortal18Agent
                 first = false;
             }
             Console.ResetColor();
+        }
+
+        // --- Settings Management & Persistence ---
+
+        private static string GetSettingsFilePath()
+        {
+            try
+            {
+                string loc = System.Reflection.Assembly.GetExecutingAssembly().Location;
+                if (!string.IsNullOrEmpty(loc))
+                {
+                    string dir = Path.GetDirectoryName(loc);
+                    if (!string.IsNullOrEmpty(dir) && Directory.Exists(dir))
+                    {
+                        return Path.Combine(dir, "agent_settings.json");
+                    }
+                }
+            }
+            catch { }
+
+            string favDir = @"C:\Users\aa.fedin\Favorites\Tia_18_Agent";
+            if (Directory.Exists(favDir))
+                return Path.Combine(favDir, "agent_settings.json");
+
+            return Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "agent_settings.json");
+        }
+
+        private static void LoadSettings()
+        {
+            try
+            {
+                string settingsFile = GetSettingsFilePath();
+                if (File.Exists(settingsFile))
+                {
+                    string json = File.ReadAllText(settingsFile, Encoding.UTF8);
+                    var loaded = _serializer.Deserialize<AgentSettings>(json);
+                    if (loaded != null)
+                    {
+                        _settings = loaded;
+                        _currentLanguage = string.Equals(_settings.Language, "en", StringComparison.OrdinalIgnoreCase) ? "en" : "ru";
+                        _exportIncludeComments = _settings.ExportIncludeComments;
+                        _csvDelimiter = string.IsNullOrEmpty(_settings.CsvDelimiter) ? ";" : _settings.CsvDelimiter;
+                        _displayPageSize = _settings.DisplayPageSize > 0 ? _settings.DisplayPageSize : 20;
+                        _backupUseShortYear = _settings.BackupUseShortYear;
+                        _autoClearConsole = _settings.AutoClearConsole;
+                        _defaultExportFormat = string.IsNullOrEmpty(_settings.DefaultExportFormat) ? "SimaticML XML" : _settings.DefaultExportFormat;
+                        _autoCleanEmptyGroups = _settings.AutoCleanEmptyGroups;
+                        _lastProjectPath = _settings.LastProjectPath ?? "";
+                        return;
+                    }
+                }
+            }
+            catch { }
+
+            // Defaults with auto-detected OS language (Russian if RU, else English)
+            string sysLang = "";
+            try { sysLang = System.Globalization.CultureInfo.InstalledUICulture.TwoLetterISOLanguageName.ToLowerInvariant(); } catch { }
+            if (string.IsNullOrEmpty(sysLang) || sysLang != "ru")
+            {
+                try { sysLang = System.Globalization.CultureInfo.CurrentCulture.TwoLetterISOLanguageName.ToLowerInvariant(); } catch { }
+            }
+            if (string.IsNullOrEmpty(sysLang) || sysLang != "ru")
+            {
+                try { sysLang = System.Globalization.CultureInfo.CurrentUICulture.TwoLetterISOLanguageName.ToLowerInvariant(); } catch { }
+            }
+            _currentLanguage = (sysLang == "ru") ? "ru" : "en";
+            _settings.Language = _currentLanguage;
+            _exportIncludeComments = true;
+            _csvDelimiter = ";";
+            _displayPageSize = 20;
+            _backupUseShortYear = false;
+            _autoClearConsole = true;
+            _defaultExportFormat = "SimaticML XML";
+            _autoCleanEmptyGroups = true;
+            _lastProjectPath = "";
+            SaveSettings();
+        }
+
+        private static void SaveSettings()
+        {
+            try
+            {
+                _settings.Language = _currentLanguage;
+                _settings.ExportIncludeComments = _exportIncludeComments;
+                _settings.CsvDelimiter = _csvDelimiter;
+                _settings.DisplayPageSize = _displayPageSize;
+                _settings.BackupUseShortYear = _backupUseShortYear;
+                _settings.AutoClearConsole = _autoClearConsole;
+                _settings.DefaultExportFormat = _defaultExportFormat;
+                _settings.AutoCleanEmptyGroups = _autoCleanEmptyGroups;
+                _settings.LastProjectPath = _lastProjectPath;
+
+                string settingsFile = GetSettingsFilePath();
+                string json = _serializer.Serialize(_settings);
+                File.WriteAllText(settingsFile, json, Encoding.UTF8);
+
+                // Mirror to Desktop if directory exists
+                string desktopDir = @"C:\Users\aa.fedin\Desktop\Tia_18_Agent";
+                if (Directory.Exists(desktopDir))
+                {
+                    try { File.WriteAllText(Path.Combine(desktopDir, "agent_settings.json"), json, Encoding.UTF8); } catch { }
+                }
+            }
+            catch { }
+        }
+
+        // --- Safe Connectivity Checks ---
+
+        private static bool IsTiaConnected()
+        {
+            if (_activeProject == null || _activeTiaPortal == null) return false;
+            try
+            {
+                string n = _activeProject.Name;
+                return !string.IsNullOrEmpty(n);
+            }
+            catch
+            {
+                _activeProject = null;
+                _activeTiaPortal = null;
+                return false;
+            }
+        }
+
+        private static string SafeGetProjectName()
+        {
+            try
+            {
+                if (_activeProject != null)
+                {
+                    string n = _activeProject.Name;
+                    if (!string.IsNullOrEmpty(n)) return n;
+                }
+            }
+            catch
+            {
+                _activeProject = null;
+                _activeTiaPortal = null;
+            }
+            return L("[Нет активного проекта / TIA закрыта]", "[No active project / TIA disconnected]");
         }
 
                                 // Win32 Auto-Confirm Watcher for Openness dialog (0033:000666)
@@ -692,6 +870,7 @@ namespace TiaPortal18Agent
         public static void ActualMain(string[] args)
         {
             InitConsole();
+            LoadSettings();
             EnsureSelfWhitelisted();
             SyncToDesktopDirectory();
             StartAutoConfirmWatcher();
@@ -714,6 +893,10 @@ namespace TiaPortal18Agent
                 if (args.Length > 1) int.TryParse(args[1], out interval);
                 if (interval < 5) interval = 5;
                 RunAutonomousWatchdog(interval);
+            }
+            else if (args[0].ToLower() == "--headless")
+            {
+                RunHeadlessCli(args);
             }
             else
             {
@@ -954,90 +1137,108 @@ namespace TiaPortal18Agent
             Console.WriteLine("================================================================================");
             Console.ResetColor();
 
-            try { EnsureConnected(); } catch { }
-            if (_activeProject == null)
-            {
-                Console.ForegroundColor = ConsoleColor.Red;
-                Console.WriteLine(" [!] ОШИБКА: Не удалось подключиться к активному TIA Portal или открыть проект.");
-                Console.ResetColor();
-                Console.WriteLine("Нажмите любую клавишу для выхода...");
-                try { if (!Console.IsInputRedirected) Console.ReadKey(true); } catch { }
-                return;
-            }
+            try { EnsureConnected(false); } catch { }
 
             while (true)
             {
                 if (_autoClearConsole) ClearScreen();
+                bool connected = IsTiaConnected();
+                string projName = SafeGetProjectName();
+
                 Console.ForegroundColor = ConsoleColor.Cyan;
                 Console.WriteLine("================================================================================");
-                Console.WriteLine("  TIA PORTAL V18 AUTONOMOUS AGENT v" + AGENT_VERSION + " | Проект: " + _activeProject.Name);
+                Console.WriteLine(string.Format("  TIA PORTAL V18 AUTONOMOUS AGENT v{0} | {1}: {2}", AGENT_VERSION, L("Проект", "Project"), projName));
                 Console.WriteLine("================================================================================");
                 Console.ResetColor();
 
+                if (!connected)
+                {
+                    Console.ForegroundColor = ConsoleColor.Yellow;
+                    Console.WriteLine(L("  [!] ВНИМАНИЕ: TIA Portal не подключен (GUI закрыт или процесс не запущен).",
+                                        "  [!] WARNING: TIA Portal is not connected (GUI closed or process not running)."));
+                    Console.WriteLine(L("      Нажмите [P] для подключения к TIA или открытия проекта в фоне (Headless).",
+                                        "      Press [P] to connect to TIA or open project in background (Headless)."));
+                    Console.ResetColor();
+                    Console.WriteLine("────────────────────────────────────────────────────────────────────────────────");
+                }
+
                 Console.WriteLine();
                 Console.ForegroundColor = ConsoleColor.White;
-                Console.WriteLine("   [1] Сводка проекта и аппаратная конфигурация");
+                Console.WriteLine("   [1] " + L("Сводка проекта и аппаратная конфигурация", "Project Summary & Hardware Configuration"));
                 Console.ForegroundColor = ConsoleColor.DarkGray;
-                Console.WriteLine("       CPU, модули, IP-адрес, подсеть — обзор оборудования");
+                Console.WriteLine("       " + L("CPU, модули, IP-адрес, подсеть — обзор оборудования", "CPU, modules, IP address, subnet — hardware overview"));
+
                 Console.ForegroundColor = ConsoleColor.White;
-                Console.WriteLine("   [2] Структура вызова (Call Structure)");
+                Console.WriteLine("   [2] " + L("Структура вызова (Call Structure)", "Call Structure"));
                 Console.ForegroundColor = ConsoleColor.DarkGray;
-                Console.WriteLine("       Полноценная навигация, фильтрация и анализ вызовов Main (OB1)");
+                Console.WriteLine("       " + L("Полноценная навигация, фильтрация и анализ вызовов Main (OB1)", "Full navigation, filtering and call analysis from Main (OB1)"));
+
                 Console.ForegroundColor = ConsoleColor.White;
-                Console.WriteLine("   [3] Структура зависимости (Dependency)");
+                Console.WriteLine("   [3] " + L("Структура зависимости (Dependency)", "Dependency Structure"));
                 Console.ForegroundColor = ConsoleColor.DarkGray;
-                Console.WriteLine("       Граф связей DB → FC/FB → OB1, проверенные цепочки обращений");
+                Console.WriteLine("       " + L("Граф связей DB → FC/FB → OB1, проверенные цепочки обращений", "Link graph DB → FC/FB → OB1, verified reference chains"));
+
                 Console.ForegroundColor = ConsoleColor.White;
-                Console.WriteLine("   [4] Ресурсы памяти (Memory Resources)");
+                Console.WriteLine("   [4] " + L("Ресурсы памяти (Memory Resources)", "Memory Resources"));
                 Console.ForegroundColor = ConsoleColor.DarkGray;
-                Console.WriteLine("       Загружаемая/Рабочая/Энергонезависимая — шкалы заполнения");
+                Console.WriteLine("       " + L("Загружаемая/Рабочая/Энергонезависимая — шкалы заполнения", "Load/Work/Retentive memory — capacity gauges"));
+
                 Console.ForegroundColor = ConsoleColor.White;
-                Console.WriteLine("   [5] Диагностика и компилятор");
+                Console.WriteLine("   [5] " + L("Диагностика и компилятор", "Diagnostics & Compiler"));
                 Console.ForegroundColor = ConsoleColor.DarkGray;
-                Console.WriteLine("       Компиляция проекта, ошибки и предупреждения TIA Portal");
+                Console.WriteLine("       " + L("Компиляция проекта, ошибки и предупреждения TIA Portal", "Project compilation, TIA Portal errors and warnings"));
+
                 Console.ForegroundColor = ConsoleColor.White;
-                Console.WriteLine("   [6] Умный очиститель мусора");
+                Console.WriteLine("   [6] " + L("Умный очиститель мусора", "Smart Garbage Cleaner"));
                 Console.ForegroundColor = ConsoleColor.DarkGray;
-                Console.WriteLine("       Очистка неиспользуемых блоков, тегов, UDT и пустых папок");
+                Console.WriteLine("       " + L("Очистка неиспользуемых блоков, тегов, UDT и пустых папок", "Cleanup of unused blocks, tags, UDTs and empty folders"));
+
                 Console.ForegroundColor = ConsoleColor.White;
-                Console.WriteLine("   [7] Пакетный экспорт / импорт");
+                Console.WriteLine("   [7] " + L("Пакетный экспорт / импорт", "Batch Export / Import"));
                 Console.ForegroundColor = ConsoleColor.DarkGray;
-                Console.WriteLine("       XML SimaticML и SCL с сохранением иерархии папок");
+                Console.WriteLine("       " + L("XML SimaticML, SCL и CSV тегов с комментариями/без", "SimaticML XML, SCL and tag CSV with/without comments"));
+
                 Console.ForegroundColor = ConsoleColor.White;
-                Console.WriteLine("   [8] S7-PLCSIM V18 — Симулятор");
+                Console.WriteLine("   [8] " + L("S7-PLCSIM V18 — Симулятор", "S7-PLCSIM V18 — Simulator"));
                 Console.ForegroundColor = ConsoleColor.DarkGray;
-                Console.WriteLine("       Статус, запуск и управление виртуальным контроллером");
+                Console.WriteLine("       " + L("Статус, запуск и управление виртуальным контроллером", "Status, start and control of virtual controller"));
+
                 Console.ForegroundColor = ConsoleColor.White;
-                Console.WriteLine("   [9] Настройки (Settings)");
+                Console.WriteLine("   [9] " + L("Настройки (Settings)", "Settings"));
                 Console.ForegroundColor = ConsoleColor.DarkGray;
-                Console.WriteLine("       Конфигурация параметров агента, форматы дат и пагинация");
+                Console.WriteLine("       " + L("Язык (RU/EN), комментарии тегов, разделители CSV, даты", "Language (RU/EN), tag comments, CSV delimiters, dates"));
+
                 Console.ForegroundColor = ConsoleColor.White;
-                Console.WriteLine("   [0] Журнал ошибок и сбоев (Crash History)");
+                Console.WriteLine("   [0] " + L("Журнал ошибок и сбоев (Crash History)", "Crash History"));
                 Console.ForegroundColor = ConsoleColor.DarkGray;
-                Console.WriteLine("       Просмотр истории крашей, стеков исключений и журнала ошибок");
+                Console.WriteLine("       " + L("Просмотр истории крашей, стеков исключений и журнала", "View crash history, exception stacks and error logs"));
+
                 Console.ForegroundColor = ConsoleColor.White;
-                Console.WriteLine("   [R] Робот KUKA — Синхронизатор сигналов");
+                Console.WriteLine("   [R] " + L("Робот KUKA — Синхронизатор сигналов", "KUKA Robot — Signal Synchronizer"));
                 Console.ForegroundColor = ConsoleColor.DarkGray;
-                Console.WriteLine("       Генератор тегов KRL $IN/$OUT ↔ TIA PLC Tags, экспорт/импорт, сравнение");
+                Console.WriteLine("       " + L("KRL $IN/$OUT ↔ TIA PLC Tags, экспорт/импорт сигналов", "KRL $IN/$OUT ↔ TIA PLC Tags, signal export/import"));
+
                 Console.ForegroundColor = ConsoleColor.White;
-                Console.WriteLine("   [M] Мастер переезда адресов оборудования и тегов");
+                Console.WriteLine("   [M] " + L("Мастер переезда адресов оборудования и тегов", "Hardware & Tag Address Relocation Wizard"));
                 Console.ForegroundColor = ConsoleColor.DarkGray;
-                Console.WriteLine("       Сдвиг HW адресов устройств и перепривязка тегов ПЛК с контролем конфликтов");
+                Console.WriteLine("       " + L("Сдвиг HW адресов и перепривязка тегов ПЛК с контролем коллизий", "HW address shift and PLC tag remapping with collision guard"));
+
                 Console.ForegroundColor = ConsoleColor.White;
-                Console.WriteLine("   [D] Диагностика совместимости и готовности системы");
+                Console.WriteLine("   [D] " + L("Диагностика совместимости и готовности системы", "Compatibility & System Readiness Check"));
                 Console.ForegroundColor = ConsoleColor.DarkGray;
-                Console.WriteLine("       Проверка версий TIA, Openness API, прав доступа Windows и Whitelist");
+                Console.WriteLine("       " + L("Проверка версий TIA, Openness API, прав доступа и Whitelist", "Check TIA versions, Openness API, user rights and Whitelist"));
                 Console.ResetColor();
+
                 Console.WriteLine();
                 Console.ForegroundColor = ConsoleColor.DarkGray;
-                Console.WriteLine("   [Esc / Q] Выход из агента");
+                Console.WriteLine("   [Esc / Q] " + L("Выход из агента", "Exit Agent"));
                 Console.ResetColor();
                 Console.WriteLine("────────────────────────────────────────────────────────────────────────────────");
                 Console.ForegroundColor = ConsoleColor.Yellow;
-                Console.WriteLine("   [S] Сохранить проект     [V] Сохранить версию (V0→V1)     [P] Сменить проект");
+                Console.WriteLine("   [S] " + L("Сохранить проект", "Save Project") + "     [V] " + L("Сохранить версию (V0→V1)", "Save Version (V0→V1)") + "     [P] " + L("Сменить / Открыть проект", "Switch / Open Project"));
                 Console.ResetColor();
                 Console.WriteLine("────────────────────────────────────────────────────────────────────────────────");
-                Console.Write(" Выберите действие [0-9, R, M, D, S, V, P, Esc]: ");
+                Console.Write(" " + L("Выберите действие", "Select action") + " [0-9, R, M, D, S, V, P, Esc]: ");
 
                 var key = Console.ReadKey(true);
                 if (key.Key == ConsoleKey.Escape || key.KeyChar == 'q' || key.KeyChar == 'Q' || key.KeyChar == 'й' || key.KeyChar == 'Й') break;
@@ -1045,6 +1246,29 @@ namespace TiaPortal18Agent
 
                 try
                 {
+                    // Check if operation requires active project
+                    bool requiresProject = (key.KeyChar == '1' || key.KeyChar == '2' || key.KeyChar == '3' ||
+                                            key.KeyChar == '4' || key.KeyChar == '5' || key.KeyChar == '6' ||
+                                            key.KeyChar == '7' || key.KeyChar == 'r' || key.KeyChar == 'R' ||
+                                            key.KeyChar == 'к' || key.KeyChar == 'К' || key.KeyChar == 'm' ||
+                                            key.KeyChar == 'M' || key.KeyChar == 'ь' || key.KeyChar == 'Ь' ||
+                                            key.KeyChar == 's' || key.KeyChar == 'S' || key.KeyChar == 'ы' ||
+                                            key.KeyChar == 'Ы' || key.KeyChar == 'v' || key.KeyChar == 'V' ||
+                                            key.KeyChar == 'м' || key.KeyChar == 'М');
+
+                    if (requiresProject && !IsTiaConnected())
+                    {
+                        Console.ForegroundColor = ConsoleColor.Yellow;
+                        Console.WriteLine("\n[!] " + L("Для выполнения этого действия требуется открытый проект.",
+                                                    "An active project is required for this action."));
+                        Console.WriteLine("    " + L("Нажмите [P] для подключения к запущенному TIA или открытия проекта в фоне (Headless).",
+                                                    "Press [P] to connect to running TIA or open project in headless mode."));
+                        Console.ResetColor();
+                        Console.WriteLine(L("Нажмите любую клавишу для продолжения...", "Press any key to continue..."));
+                        try { Console.ReadKey(true); } catch { }
+                        continue;
+                    }
+
                     if (key.KeyChar == '1') ShowHardwareConfig();
                     else if (key.KeyChar == '2') ShowCallStructure();
                     else if (key.KeyChar == '3') ShowDependencyStructure();
@@ -1061,7 +1285,7 @@ namespace TiaPortal18Agent
                     else if (key.KeyChar == 's' || key.KeyChar == 'S' || key.KeyChar == 'ы' || key.KeyChar == 'Ы')
                     {
                         Console.WriteLine(DoSaveProject());
-                        Console.WriteLine("Нажмите любую клавишу для продолжения...");
+                        Console.WriteLine(L("Нажмите любую клавишу для продолжения...", "Press any key to continue..."));
                         Console.ReadKey(true);
                     }
                     else if (key.KeyChar == 'p' || key.KeyChar == 'P' || key.KeyChar == 'з' || key.KeyChar == 'З')
@@ -1074,19 +1298,30 @@ namespace TiaPortal18Agent
                         Console.ForegroundColor = ConsoleColor.Green;
                         Console.WriteLine(res["message"]);
                         Console.ResetColor();
-                        Console.WriteLine("Нажмите любую клавишу для продолжения...");
+                        Console.WriteLine(L("Нажмите любую клавишу для продолжения...", "Press any key to continue..."));
                         Console.ReadKey(true);
                     }
                 }
                 catch (Exception ex)
                 {
                     CrashLogger.Log(ex, "RunInteractiveDashboard.MenuSelection");
-                    Console.ForegroundColor = ConsoleColor.Red;
-                    Console.WriteLine("\n[!] Ошибка выполнения операции: " + ex.Message);
-                    Console.WriteLine("    Подробности записаны в crash_history.log");
+                    if (!IsTiaConnected())
+                    {
+                        Console.ForegroundColor = ConsoleColor.Yellow;
+                        Console.WriteLine("\n[!] " + L("Связь с TIA Portal была разорвана (программа закрыта пользователем).",
+                                                    "Connection to TIA Portal was lost (application was closed by user)."));
+                        Console.WriteLine("    " + L("Соединение безопасно сброшено. Вы можете переподключиться через [P] или работать в фоне.",
+                                                    "Connection safely reset. You can reconnect via [P] or work in headless mode."));
+                    }
+                    else
+                    {
+                        Console.ForegroundColor = ConsoleColor.Red;
+                        Console.WriteLine("\n[!] " + L("Ошибка выполнения операции: ", "Operation error: ") + ex.Message);
+                        Console.WriteLine("    " + L("Подробности записаны в crash_history.log", "Details written to crash_history.log"));
+                    }
                     Console.ResetColor();
-                    Console.WriteLine("Нажмите любую клавишу для возврата в меню...");
-                    Console.ReadKey(true);
+                    Console.WriteLine(L("Нажмите любую клавишу для возврата в меню...", "Press any key to return to menu..."));
+                    try { Console.ReadKey(true); } catch { }
                 }
             }
         }
@@ -1165,50 +1400,75 @@ namespace TiaPortal18Agent
                 if (_autoClearConsole) ClearScreen();
                 Console.ForegroundColor = ConsoleColor.Cyan;
                 Console.WriteLine("================================================================================");
-                Console.WriteLine("  НАСТРОЙКИ АГЕНТА (Settings)");
+                Console.WriteLine("  " + L("НАСТРОЙКИ АГЕНТА (Settings)", "AGENT SETTINGS (Config & Preferences)"));
                 Console.WriteLine("================================================================================");
                 Console.ResetColor();
-                Console.WriteLine("  • Версия агента:      " + AGENT_VERSION);
-                Console.WriteLine("  • Целевая версия TIA:  " + TIA_TARGET_VERSION);
+                Console.WriteLine("  • " + L("Версия агента:       ", "Agent Version:       ") + AGENT_VERSION);
+                Console.WriteLine("  • " + L("Целевая версия TIA:   ", "TIA Target Version:  ") + TIA_TARGET_VERSION);
+                Console.WriteLine("  • " + L("Язык системы (OS):   ", "System Language:     ") + System.Globalization.CultureInfo.CurrentUICulture.DisplayName);
                 Console.WriteLine("--------------------------------------------------------------------------------");
-                Console.WriteLine(" [1] Формат даты в резервной копии: " + (_backupUseShortYear ? "Короткий год (dd.MM.yy)" : "Полный год (dd.MM.yyyy)"));
-                Console.WriteLine(" [2] Авто-очистка экрана перед меню: " + (_autoClearConsole ? "Включено" : "Выключено"));
-                Console.WriteLine(" [3] Количество строк на страницу:   " + _displayPageSize + " строк");
-                Console.WriteLine(" [4] Формат экспорта по умолчанию:   " + _defaultExportFormat);
-                Console.WriteLine(" [5] Авто-удаление пустых папок:     " + (_autoCleanEmptyGroups ? "Включено (после очистки)" : "Выключено"));
-                Console.WriteLine(" [6] Перерегистрация в Openness Whitelist (реестр Windows)");
-                Console.WriteLine(" [7] Переподключиться к TIA Portal / сбросить кэш");
+                Console.WriteLine(" [1] " + L("Язык интерфейса (UI Language):          ", "UI Language:                         ") + (_currentLanguage == "ru" ? "Русский [RU]" : "English [EN]"));
+                Console.WriteLine(" [2] " + L("Экспорт комментариев к тегам:        ", "Export Tag Comments:                 ") + (_exportIncludeComments ? L("ВКЛЮЧЕНО (с комментариями)", "ENABLED (with comments)") : L("ВЫКЛЮЧЕНО (без комментариев)", "DISABLED (no comments)")));
+                Console.WriteLine(" [3] " + L("Разделитель CSV (CSV Delimiter):     ", "CSV Delimiter:                       ") + (_csvDelimiter == ";" ? L("Точка с запятой [;] (EU/RU)", "Semicolon [;] (EU/RU)") : L("Запятая [,] (US/Intl)", "Comma [,] (US/Intl)")));
+                Console.WriteLine(" [4] " + L("Формат даты в резервной копии:       ", "Backup Date Format:                  ") + (_backupUseShortYear ? L("Короткий год (dd.MM.yy)", "Short Year (dd.MM.yy)") : L("Полный год (dd.MM.yyyy)", "Full Year (dd.MM.yyyy)")));
+                Console.WriteLine(" [5] " + L("Количество строк на страницу:        ", "Display Page Size:                   ") + _displayPageSize + L(" строк", " lines"));
+                Console.WriteLine(" [6] " + L("Формат экспорта блоков по умолчанию: ", "Default Block Export Format:         ") + _defaultExportFormat);
+                Console.WriteLine(" [7] " + L("Авто-очистка экрана перед меню:      ", "Auto-Clear Screen on Menu:           ") + (_autoClearConsole ? L("Включено", "Enabled") : L("Выключено", "Disabled")));
+                Console.WriteLine(" [8] " + L("Авто-удаление пустых папок:          ", "Auto-Delete Empty Groups:            ") + (_autoCleanEmptyGroups ? L("Включено (после очистки)", "Enabled (after cleaning)") : L("Выключено", "Disabled")));
+                Console.WriteLine(" [9] " + L("Перерегистрация в Openness Whitelist (реестр Windows)", "Re-register in Openness Whitelist (Windows Registry)"));
+                Console.WriteLine(" [C] " + L("Проверить / Переподключить TIA Portal", "Check / Reconnect TIA Portal"));
+                Console.WriteLine(" [H] " + L("Открыть проект в фоновом режиме (Headless WithoutUserInterface)", "Open project in Headless mode (WithoutUserInterface)"));
                 Console.WriteLine("================================================================================");
-                Console.WriteLine(" [Esc/Q/0] Вернуться в главное меню");
-                Console.Write("\n Ваш выбор: ");
+                Console.WriteLine(" [Esc/Q/0] " + L("Вернуться в главное меню", "Return to Main Menu"));
+                Console.Write("\n " + L("Ваш выбор: ", "Your choice: "));
 
                 var key = Console.ReadKey(true);
                 if (key.Key == ConsoleKey.Escape || key.Key == ConsoleKey.Q || key.KeyChar == '0' || key.KeyChar == 'q' || key.KeyChar == 'й' || key.KeyChar == 'Й') break;
 
                 if (key.KeyChar == '1')
                 {
-                    _backupUseShortYear = !_backupUseShortYear;
+                    _currentLanguage = (_currentLanguage == "ru") ? "en" : "ru";
+                    SaveSettings();
                 }
                 else if (key.KeyChar == '2')
                 {
-                    _autoClearConsole = !_autoClearConsole;
+                    _exportIncludeComments = !_exportIncludeComments;
+                    SaveSettings();
                 }
                 else if (key.KeyChar == '3')
+                {
+                    _csvDelimiter = (_csvDelimiter == ";") ? "," : ";";
+                    SaveSettings();
+                }
+                else if (key.KeyChar == '4')
+                {
+                    _backupUseShortYear = !_backupUseShortYear;
+                    SaveSettings();
+                }
+                else if (key.KeyChar == '5')
                 {
                     if (_displayPageSize == 15) _displayPageSize = 20;
                     else if (_displayPageSize == 20) _displayPageSize = 25;
                     else if (_displayPageSize == 25) _displayPageSize = 50;
                     else _displayPageSize = 15;
-                }
-                else if (key.KeyChar == '4')
-                {
-                    _defaultExportFormat = _defaultExportFormat == "SimaticML XML" ? "SCL" : "SimaticML XML";
-                }
-                else if (key.KeyChar == '5')
-                {
-                    _autoCleanEmptyGroups = !_autoCleanEmptyGroups;
+                    SaveSettings();
                 }
                 else if (key.KeyChar == '6')
+                {
+                    _defaultExportFormat = _defaultExportFormat == "SimaticML XML" ? "SCL" : "SimaticML XML";
+                    SaveSettings();
+                }
+                else if (key.KeyChar == '7')
+                {
+                    _autoClearConsole = !_autoClearConsole;
+                    SaveSettings();
+                }
+                else if (key.KeyChar == '8')
+                {
+                    _autoCleanEmptyGroups = !_autoCleanEmptyGroups;
+                    SaveSettings();
+                }
+                else if (key.KeyChar == '9')
                 {
                     try
                     {
@@ -1226,27 +1486,31 @@ namespace TiaPortal18Agent
                             var p = Process.Start(psi);
                             p.WaitForExit(5000);
                             Console.ForegroundColor = ConsoleColor.Green;
-                            Console.WriteLine("\n[+] Whitelist успешно обновлен в реестре.");
+                            Console.WriteLine("\n[+] " + L("Whitelist успешно обновлен в реестре.", "Whitelist successfully updated in registry."));
                             Console.ResetColor();
                         }
                     }
                     catch (Exception ex)
                     {
                         Console.ForegroundColor = ConsoleColor.Red;
-                        Console.WriteLine("\n[-] Ошибка: " + ex.Message);
+                        Console.WriteLine("\n[-] " + L("Ошибка: ", "Error: ") + ex.Message);
                         Console.ResetColor();
                     }
                     Thread.Sleep(1000);
                 }
-                else if (key.KeyChar == '7')
+                else if (key.KeyChar == 'c' || key.KeyChar == 'C' || key.KeyChar == 'с' || key.KeyChar == 'С')
                 {
-                    Console.WriteLine("\nПереподключение к TIA Portal...");
+                    Console.WriteLine("\n" + L("Переподключение к TIA Portal...", "Reconnecting to TIA Portal..."));
                     _activeProject = null;
-                    EnsureConnected();
+                    EnsureConnected(false);
                     Console.ForegroundColor = ConsoleColor.Green;
-                    Console.WriteLine("[+] Подключено к проекту: " + (_activeProject != null ? _activeProject.Name : "null"));
+                    Console.WriteLine("[+] " + L("Подключено к проекту: ", "Connected to project: ") + SafeGetProjectName());
                     Console.ResetColor();
-                    Thread.Sleep(1000);
+                    Thread.Sleep(1200);
+                }
+                else if (key.KeyChar == 'h' || key.KeyChar == 'H' || key.KeyChar == 'р' || key.KeyChar == 'Р')
+                {
+                    OpenProjectHeadlessInteractive();
                 }
             }
         }
@@ -1671,7 +1935,7 @@ namespace TiaPortal18Agent
             ClearScreen();
             Console.ForegroundColor = ConsoleColor.Cyan;
             Console.WriteLine("================================================================================");
-            Console.WriteLine("  ПАКЕТНЫЙ ЭКСПОРТ И ИМПОРТ (SimaticML XML & SCL)");
+            Console.WriteLine("  " + L("ПАКЕТНЫЙ ЭКСПОРТ И ИМПОРТ (SimaticML XML, SCL & CSV)", "BATCH EXPORT AND IMPORT (SimaticML XML, SCL & CSV)"));
             Console.WriteLine("================================================================================");
             Console.ResetColor();
 
@@ -1679,21 +1943,27 @@ namespace TiaPortal18Agent
             var dev = FindDevice(null);
             var plc = FindPlcSoftware(dev);
 
-            Console.WriteLine(" 1. Пакетный экспорт проекта (Блоки, UDT, Теги с иерархией)");
-            Console.WriteLine(" 2. Пакетный импорт проекта из директории");
-            Console.WriteLine(" 0. Назад");
-            Console.Write(" Выберите действие: ");
+            Console.WriteLine(" 1. " + L("Пакетный экспорт проекта (Блоки, UDT, Теги с иерархией XML/SCL)",
+                                          "Batch export project (Blocks, UDTs, Tags with hierarchy XML/SCL)"));
+            Console.WriteLine(" 2. " + L("Пакетный импорт проекта из директории",
+                                          "Batch import project from directory"));
+            Console.WriteLine(" 3. " + L(string.Format("Экспорт всех тегов ПЛК в CSV ({0}, разделитель: '{1}')",
+                                                      _exportIncludeComments ? "с комментариями" : "без комментариев", _csvDelimiter),
+                                          string.Format("Export all PLC tags to CSV ({0}, delimiter: '{1}')",
+                                                      _exportIncludeComments ? "with comments" : "without comments", _csvDelimiter)));
+            Console.WriteLine(" 0. " + L("Назад", "Back"));
+            Console.Write(" " + L("Выберите действие: ", "Select action: "));
             var k = Console.ReadKey(true);
             Console.WriteLine(k.KeyChar);
 
             if (k.KeyChar == '1')
             {
                 string defDir = @"C:\Users\aa.fedin\Desktop\Tia_18_Agent\Export_" + _activeProject.Name;
-                Console.Write(" Путь экспорта [" + defDir + "]: ");
+                Console.Write(" " + L("Путь экспорта", "Export path") + " [" + defDir + "]: ");
                 string path = Console.ReadLine();
                 if (string.IsNullOrWhiteSpace(path)) path = defDir;
 
-                Console.WriteLine(" Экспорт в процессе...");
+                Console.WriteLine(" " + L("Экспорт в процессе...", "Export in progress..."));
                 string res = BatchExport(plc, path, "all");
                 Console.ForegroundColor = ConsoleColor.Green;
                 Console.WriteLine(" " + res);
@@ -1701,7 +1971,7 @@ namespace TiaPortal18Agent
             }
             else if (k.KeyChar == '2')
             {
-                Console.Write(" Путь к директории для импорта: ");
+                Console.Write(" " + L("Путь к директории для импорта: ", "Directory path for import: "));
                 string path = Console.ReadLine();
                 if (Directory.Exists(path))
                 {
@@ -1712,11 +1982,24 @@ namespace TiaPortal18Agent
                 }
                 else
                 {
-                    Console.WriteLine("Директория не найдена.");
+                    Console.WriteLine(L("Директория не найдена.", "Directory not found."));
                 }
             }
+            else if (k.KeyChar == '3')
+            {
+                string defCsv = @"C:\Users\aa.fedin\Desktop\Tia_18_Agent\Tags_" + _activeProject.Name + ".csv";
+                Console.Write(" " + L("Путь к CSV файлу", "Path to CSV file") + " [" + defCsv + "]: ");
+                string csvP = Console.ReadLine();
+                if (string.IsNullOrWhiteSpace(csvP)) csvP = defCsv;
 
-            Console.WriteLine("Нажмите любую клавишу для возврата в меню...");
+                Console.WriteLine(" " + L("Экспорт тегов в CSV...", "Exporting tags to CSV..."));
+                string res = DoExportTagsCsv(plc, csvP);
+                Console.ForegroundColor = ConsoleColor.Green;
+                Console.WriteLine(" " + res);
+                Console.ResetColor();
+            }
+
+            Console.WriteLine(L("Нажмите любую клавишу для возврата в меню...", "Press any key to return to menu..."));
             Console.ReadKey(true);
             ClearScreen();
         }
@@ -3508,7 +3791,7 @@ namespace TiaPortal18Agent
                     sigDecl = string.Format("SIGNAL {0} ${1}[{2}]", tName, kukaDir, sigNum);
                 }
 
-                if (!string.IsNullOrEmpty(tComment))
+                if (_exportIncludeComments && !string.IsNullOrEmpty(tComment))
                 {
                     sbExport.AppendLine(string.Format("{0,-45} ; {1}", sigDecl, tComment));
                 }
@@ -5692,52 +5975,165 @@ private static List<Dictionary<string, object>> DoListProcesses()
             return result;
         }
 
-                private static void SelectTiaProjectInteractive()
+        private static void SelectTiaProjectInteractive()
         {
             ClearScreen();
             Console.ForegroundColor = ConsoleColor.Cyan;
             Console.WriteLine("================================================================================");
-            Console.WriteLine("  ВЫБОР ПРОЕКТА / ПРОЦЕССА TIA PORTAL V18");
+            Console.WriteLine("  " + L("ВЫБОР ПРОЕКТА / ПОДКЛЮЧЕНИЕ К TIA PORTAL", "PROJECT SELECTION & TIA PORTAL CONNECTION"));
             Console.WriteLine("================================================================================");
             Console.ResetColor();
 
-            var procs = TiaPortal.GetProcesses();
-            if (procs.Count == 0)
+            IList<TiaPortalProcess> procs = null;
+            try { procs = TiaPortal.GetProcesses(); } catch { }
+
+            int pCount = (procs != null) ? procs.Count : 0;
+            Console.WriteLine("  " + L("Активных процессов TIA Portal: ", "Active TIA Portal processes: ") + pCount);
+            Console.WriteLine("--------------------------------------------------------------------------------");
+
+            if (pCount > 0)
             {
-                Console.WriteLine("Не обнаружено запущенных процессов TIA Portal.");
-                Console.WriteLine("Нажмите любую клавишу для возврата в меню...");
-                Console.ReadKey(true);
-                ClearScreen();
+                for (int i = 0; i < procs.Count; i++)
+                {
+                    var p = procs[i];
+                    string projPath = p.ProjectPath != null ? p.ProjectPath.FullName : L("[Без открытого проекта]", "[No open project]");
+                    string isCurrent = (p.Id == _attachedPid && IsTiaConnected()) ? " <-- " + L("[АКТИВЕН]", "[ACTIVE]") : "";
+                    Console.WriteLine("  [{0}] PID: {1,-6} | {2}: {3}{4}", i + 1, p.Id, L("Проект", "Project"), projPath, isCurrent);
+                }
+                Console.WriteLine("--------------------------------------------------------------------------------");
+            }
+
+            Console.ForegroundColor = ConsoleColor.White;
+            Console.WriteLine("  [H] " + L("Открыть проект в фоновом режиме (Headless WithoutUserInterface)", "Open project in Headless mode (WithoutUserInterface)"));
+            if (!string.IsNullOrEmpty(_lastProjectPath) && File.Exists(_lastProjectPath))
+            {
+                Console.WriteLine("  [L] " + L("Открыть последний проект в фоне: ", "Open last project in headless: ") + Path.GetFileName(_lastProjectPath));
+            }
+            Console.WriteLine("  [W] " + L("Запустить новый TIA Portal с графическим интерфейсом (WithUserInterface)", "Launch new TIA Portal with GUI (WithUserInterface)"));
+            Console.WriteLine("  [0 / Esc] " + L("Отмена / Назад", "Cancel / Back"));
+            Console.ResetColor();
+
+            if (pCount > 0)
+            {
+                Console.Write("\n " + L("Введите номер процесса [1-" + pCount + "], H, L, W или Esc: ", "Enter process number [1-" + pCount + "], H, L, W or Esc: "));
+            }
+            else
+            {
+                Console.Write("\n " + L("Выберите действие [H, L, W, Esc]: ", "Select action [H, L, W, Esc]: "));
+            }
+
+            var key = Console.ReadKey(true);
+            Console.WriteLine(key.KeyChar);
+
+            if (key.Key == ConsoleKey.Escape || key.KeyChar == '0' || key.KeyChar == 'q' || key.KeyChar == 'Q')
+            {
                 return;
             }
 
-            Console.WriteLine("Обнаружено активных процессов TIA Portal: " + procs.Count);
-            Console.WriteLine("--------------------------------------------------------------------------------");
-            for (int i = 0; i < procs.Count; i++)
+            if (key.KeyChar == 'h' || key.KeyChar == 'H' || key.KeyChar == 'р' || key.KeyChar == 'Р')
             {
-                var p = procs[i];
-                string projPath = p.ProjectPath != null ? p.ProjectPath.FullName : "[Без открытого проекта]";
-                string isCurrent = (p.Id == _attachedPid) ? " <-- [АКТИВЕН]" : "";
-                Console.WriteLine("  [{0}] PID: {1,-6} | Проект: {2}{3}", i + 1, p.Id, projPath, isCurrent);
+                OpenProjectHeadlessInteractive();
+                return;
             }
-            Console.WriteLine("--------------------------------------------------------------------------------");
-            Console.Write("Введите номер процесса для подключения [1-{0}] или Enter для отмены: ", procs.Count);
-            string input = Console.ReadLine();
+
+            if (key.KeyChar == 'l' || key.KeyChar == 'L' || key.KeyChar == 'д' || key.KeyChar == 'Д')
+            {
+                if (!string.IsNullOrEmpty(_lastProjectPath) && File.Exists(_lastProjectPath))
+                {
+                    DoOpenHeadlessDirect(_lastProjectPath);
+                }
+                else
+                {
+                    Console.WriteLine(L("Путь к последнему проекту не найден.", "Last project path not found."));
+                    Thread.Sleep(1500);
+                }
+                return;
+            }
+
+            if (key.KeyChar == 'w' || key.KeyChar == 'W' || key.KeyChar == 'ц' || key.KeyChar == 'Ц')
+            {
+                Console.WriteLine(L("\nЗапуск TIA Portal V18 с графическим интерфейсом...", "\nLaunching TIA Portal V18 with GUI..."));
+                try
+                {
+                    _activeTiaPortal = new TiaPortal(TiaPortalMode.WithUserInterface);
+                    Console.ForegroundColor = ConsoleColor.Green;
+                    Console.WriteLine(L("[+] TIA Portal запущен с интерфейсом!", "[+] TIA Portal launched with GUI!"));
+                    Console.ResetColor();
+                }
+                catch (Exception ex)
+                {
+                    Console.ForegroundColor = ConsoleColor.Red;
+                    Console.WriteLine(L("[-] Ошибка запуска: ", "[-] Launch error: ") + ex.Message);
+                    Console.ResetColor();
+                }
+                Thread.Sleep(1500);
+                return;
+            }
+
             int selectedIdx;
-            if (int.TryParse(input, out selectedIdx) && selectedIdx >= 1 && selectedIdx <= procs.Count)
+            if (int.TryParse(key.KeyChar.ToString(), out selectedIdx) && procs != null && selectedIdx >= 1 && selectedIdx <= procs.Count)
             {
                 int targetPid = procs[selectedIdx - 1].Id;
-                Console.WriteLine("Переподключение к PID {0}...", targetPid);
+                Console.WriteLine(L("\nПереподключение к PID {0}...", "\nReconnecting to PID {0}..."), targetPid);
                 _activeProject = null;
                 _activeTiaPortal = null;
                 string res = DoConnectProcess(new Dictionary<string, object> { { "pid", targetPid }, { "force", true } });
                 Console.ForegroundColor = ConsoleColor.Green;
                 Console.WriteLine(res);
                 Console.ResetColor();
+                if (_activeProject != null && _activeProject.Path != null)
+                {
+                    _lastProjectPath = _activeProject.Path.FullName;
+                    SaveSettings();
+                }
+                Thread.Sleep(1500);
             }
-            Console.WriteLine("Нажмите любую клавишу для продолжения...");
-            Console.ReadKey(true);
-            ClearScreen();
+        }
+
+        private static void OpenProjectHeadlessInteractive()
+        {
+            Console.WriteLine("\n" + L("--- ОТКРЫТИЕ ПРОЕКТА В ФОНОВОМ РЕЖИМЕ (HEADLESS) ---", "--- OPEN PROJECT IN HEADLESS MODE ---"));
+            Console.WriteLine(L("Проект будет открыт через Openness API без запуска графического окна TIA Portal.",
+                                "Project will be opened via Openness API without launching TIA Portal GUI."));
+            string defaultPath = !string.IsNullOrEmpty(_lastProjectPath) ? _lastProjectPath : "";
+            Console.Write(L("Укажите путь к .ap18 файлу", "Specify path to .ap18 file") + " [" + defaultPath + "]: ");
+            string input = Console.ReadLine();
+            if (string.IsNullOrWhiteSpace(input)) input = defaultPath;
+
+            if (string.IsNullOrWhiteSpace(input) || !File.Exists(input))
+            {
+                Console.ForegroundColor = ConsoleColor.Red;
+                Console.WriteLine(L("[-] Файл не существует: ", "[-] File does not exist: ") + input);
+                Console.ResetColor();
+                Thread.Sleep(1500);
+                return;
+            }
+
+            DoOpenHeadlessDirect(input);
+        }
+
+        private static void DoOpenHeadlessDirect(string ap18Path)
+        {
+            Console.WriteLine(L("Открытие в фоновом режиме (WithoutUserInterface)...", "Opening in background (WithoutUserInterface)..."));
+            try
+            {
+                StartAutoConfirmWatcher();
+                _activeTiaPortal = new TiaPortal(TiaPortalMode.WithoutUserInterface);
+                _activeProject = _activeTiaPortal.Projects.Open(new FileInfo(ap18Path));
+                _lastProjectPath = ap18Path;
+                SaveSettings();
+
+                Console.ForegroundColor = ConsoleColor.Green;
+                Console.WriteLine(L("[+] Проект успешно открыт в фоновом режиме: ", "[+] Project opened successfully in headless mode: ") + _activeProject.Name);
+                Console.ResetColor();
+            }
+            catch (Exception ex)
+            {
+                Console.ForegroundColor = ConsoleColor.Red;
+                Console.WriteLine(L("[-] Ошибка открытия: ", "[-] Open error: ") + ex.Message);
+                Console.ResetColor();
+            }
+            Thread.Sleep(1500);
         }
 
 private static string DoConnectProcess(Dictionary<string, object> args)
@@ -6356,44 +6752,152 @@ private static Dictionary<string, object> DoCheckSimulation()
             string curName = _activeProject.Name;
             var dirInfo = _activeProject.Path.Directory;
             var parentDir = dirInfo.Parent.FullName;
+            string oldPath = _activeProject.Path.FullName;
 
             string dateFmt = _backupUseShortYear ? "dd.MM.yy" : "dd.MM.yyyy";
             string todayStr = DateTime.Now.ToString(dateFmt);
-            string newName = "";
 
-            if (args != null && args.ContainsKey("customName") && !string.IsNullOrEmpty(args["customName"] as string))
+            string customName = args != null && args.ContainsKey("customName") ? args["customName"] as string : null;
+            string branchName = args != null && args.ContainsKey("branchName") ? args["branchName"] as string : null;
+            bool isInteractive = args == null || !args.ContainsKey("nonInteractive");
+
+            // Remove existing trailing date patterns like _19.07.26 or _19.07.2026 or _10.09.2026
+            string cleanBase = Regex.Replace(curName, @"_\d{2}\.\d{2}\.\d{2,4}$", "");
+
+            // Pattern match: SPS_Mechta_2026_V0 -> prefix = "SPS_Mechta_2026", ver = 0
+            string prefix = cleanBase;
+            int curVer = 0;
+            string suffix = "";
+            var m = Regex.Match(cleanBase, @"^(.*?)_V(\d+)(.*)$", RegexOptions.IgnoreCase);
+            if (m.Success)
             {
-                newName = args["customName"].ToString();
+                prefix = m.Groups[1].Value;
+                curVer = int.Parse(m.Groups[2].Value);
+                suffix = m.Groups[3].Value;
             }
-            else
+
+            // Scan parent directory for all existing projects of this family
+            int maxExistingVer = curVer;
+            var siblingProjects = new List<string>();
+            try
             {
-                // Remove existing trailing date patterns like _19.07.26 or _19.07.2026
-                string baseName = Regex.Replace(curName, @"_\d{2}\.\d{2}\.\d{2,4}$", "");
-                
-                // Pattern match: SPS_Mechta_2026_V0 -> SPS_Mechta_2026_V1
-                var m = Regex.Match(baseName, @"^(.*?)_V(\d+)(.*)$", RegexOptions.IgnoreCase);
-                if (m.Success)
+                if (Directory.Exists(parentDir))
                 {
-                    string prefix = m.Groups[1].Value;
-                    int ver = int.Parse(m.Groups[2].Value);
-                    int nextVer = ver + 1;
-                    string suffix = m.Groups[3].Value;
-                    newName = prefix + "_V" + nextVer + "_" + todayStr + suffix;
+                    var dirs = Directory.GetDirectories(parentDir);
+                    foreach (var d in dirs)
+                    {
+                        string dirName = Path.GetFileName(d);
+                        var vm = Regex.Match(dirName, @"^" + Regex.Escape(prefix) + @"_V(\d+)", RegexOptions.IgnoreCase);
+                        if (vm.Success)
+                        {
+                            siblingProjects.Add(dirName);
+                            int fVer = int.Parse(vm.Groups[1].Value);
+                            if (fVer > maxExistingVer) maxExistingVer = fVer;
+                        }
+                    }
+                }
+            }
+            catch { }
+
+            string newName = "";
+            string strategy = "Trunk";
+
+            if (!string.IsNullOrEmpty(customName))
+            {
+                newName = customName;
+                strategy = "Custom";
+            }
+            else if (!string.IsNullOrEmpty(branchName))
+            {
+                newName = string.Format("{0}_V{1}_Branch_{2}_{3}", prefix, curVer, branchName, todayStr);
+                strategy = "Branch";
+            }
+            else if (curVer < maxExistingVer && isInteractive)
+            {
+                // Branch Divergence detected in interactive mode!
+                ClearScreen();
+                Console.ForegroundColor = ConsoleColor.Yellow;
+                Console.WriteLine("╔════════════════════════════════════════════════════════════════════════════════╗");
+                Console.WriteLine("║  " + L("ВНИМАНИЕ: ОБНАРУЖЕНО ВЕТВЛЕНИЕ ВЕРСИЙ (BRANCH DIVERGENCE)!", "WARNING: PROJECT BRANCH DIVERGENCE DETECTED!             ") + "  ║");
+                Console.WriteLine("╠════════════════════════════════════════════════════════════════════════════════╣");
+                Console.WriteLine(string.Format("║  " + L("Открыт проект          : {0,-55}", "Opened Project         : {0,-55}") + " ║", curName));
+                Console.WriteLine(string.Format("║  " + L("Версия открытого файла : V{0,-54}", "Opened File Version    : V{0,-54}") + " ║", curVer));
+                Console.WriteLine(string.Format("║  " + L("Максимальная на диске  : V{0,-54}", "Highest Version on Disk: V{0,-54}") + " ║", maxExistingVer));
+                Console.WriteLine("╚════════════════════════════════════════════════════════════════════════════════╝");
+                Console.ResetColor();
+                Console.WriteLine();
+                Console.WriteLine("  " + L("Если создать V" + (curVer + 1) + ", возникнет путаница с уже существующими V" + maxExistingVer + "!",
+                                      "If you create V" + (curVer + 1) + ", version collision and divergence from existing V" + maxExistingVer + " will occur!"));
+                Console.WriteLine();
+                Console.ForegroundColor = ConsoleColor.White;
+                Console.WriteLine("  [1] " + L("Сквозная версия (Trunk): " + prefix + "_V" + (maxExistingVer + 1) + "_" + todayStr + suffix + " [Рекомендуется]",
+                                           "Linear Trunk Version: " + prefix + "_V" + (maxExistingVer + 1) + "_" + todayStr + suffix + " [Recommended]"));
+                Console.ForegroundColor = ConsoleColor.DarkGray;
+                Console.WriteLine("      " + L("Продолжить общую сквозную нумерацию, исключая дубликаты версий",
+                                           "Continue global linear numbering, preventing version duplicates"));
+                Console.ForegroundColor = ConsoleColor.White;
+                Console.WriteLine("  [2] " + L("Изолированная ветка (Branch): " + prefix + "_V" + curVer + "_Branch_{Имя}_" + todayStr,
+                                           "Isolated Branch: " + prefix + "_V" + curVer + "_Branch_{Name}_" + todayStr));
+                Console.ForegroundColor = ConsoleColor.DarkGray;
+                Console.WriteLine("      " + L("Создать маркированную ветку от старой ревизии V" + curVer,
+                                           "Create an explicitly tagged branch from older revision V" + curVer));
+                Console.ForegroundColor = ConsoleColor.White;
+                Console.WriteLine("  [3] " + L("Ввести имя версии вручную", "Enter custom version name manually"));
+                Console.ResetColor();
+                Console.WriteLine("────────────────────────────────────────────────────────────────────────────────");
+                Console.Write("  " + L("Ваш выбор [1, 2, 3]: ", "Your choice [1, 2, 3]: "));
+
+                var optKey = Console.ReadKey(true);
+                Console.WriteLine(optKey.KeyChar);
+
+                if (optKey.KeyChar == '2')
+                {
+                    Console.Write("  " + L("Введите имя ветки (например Hotfix или GripperTest): ", "Enter branch name (e.g. Hotfix or GripperTest): "));
+                    string bInput = Console.ReadLine();
+                    if (string.IsNullOrWhiteSpace(bInput)) bInput = "Branch";
+                    bInput = Regex.Replace(bInput.Trim(), @"[^\w\-]", "_");
+                    newName = string.Format("{0}_V{1}_Branch_{2}_{3}", prefix, curVer, bInput, todayStr);
+                    strategy = "Branch";
+                }
+                else if (optKey.KeyChar == '3')
+                {
+                    Console.Write("  " + L("Введите полное имя нового проекта: ", "Enter full new project name: "));
+                    string cInput = Console.ReadLine();
+                    if (!string.IsNullOrWhiteSpace(cInput))
+                    {
+                        newName = cInput.Trim();
+                        strategy = "Custom";
+                    }
+                    else
+                    {
+                        newName = prefix + "_V" + (maxExistingVer + 1) + "_" + todayStr + suffix;
+                        strategy = "Trunk";
+                    }
                 }
                 else
                 {
-                    newName = baseName + "_V1_" + todayStr;
+                    // Option 1 default: Trunk increment
+                    newName = prefix + "_V" + (maxExistingVer + 1) + "_" + todayStr + suffix;
+                    strategy = "Trunk";
                 }
             }
+            else
+            {
+                // Normal progression or non-interactive safe mode:
+                int targetVer = (curVer < maxExistingVer) ? (maxExistingVer + 1) : (curVer + 1);
+                newName = prefix + "_V" + targetVer + "_" + todayStr + suffix;
+                strategy = (curVer < maxExistingVer) ? "Trunk (Auto-Recovered)" : "Trunk";
+            }
 
+            // Collision Guard: Ensure target directory does not exist
             string targetFolder = Path.Combine(parentDir, newName);
             if (Directory.Exists(targetFolder))
             {
-                int subVer = 1;
+                int revIndex = 1;
                 string baseAttempt = newName;
                 while (Directory.Exists(targetFolder))
                 {
-                    newName = baseAttempt + "_" + (subVer++);
+                    newName = string.Format("{0}_rev{1}", baseAttempt, revIndex++);
                     targetFolder = Path.Combine(parentDir, newName);
                 }
             }
@@ -6406,30 +6910,176 @@ private static Dictionary<string, object> DoCheckSimulation()
             if (_activeTiaPortal.Projects.Count > 0)
             {
                 _activeProject = _activeTiaPortal.Projects[0];
+                if (_activeProject.Path != null)
+                {
+                    _lastProjectPath = _activeProject.Path.FullName;
+                    SaveSettings();
+                }
             }
+
+            // Write Version Manifest for permanent engineering audit
+            try
+            {
+                string manifestPath = Path.Combine(targetFolder, "version_manifest.txt");
+                var sbMan = new StringBuilder();
+                sbMan.AppendLine("================================================================================");
+                sbMan.AppendLine("TIA PORTAL PROJECT VERSION MANIFEST");
+                sbMan.AppendLine("================================================================================");
+                sbMan.AppendLine("New Project Name : " + newName);
+                sbMan.AppendLine("Target Directory : " + targetFolder);
+                sbMan.AppendLine("Parent Project   : " + curName);
+                sbMan.AppendLine("Parent Path      : " + oldPath);
+                sbMan.AppendLine("Created Timestamp: " + DateTime.Now.ToString("yyyy-MM-dd HH:mm:ss"));
+                sbMan.AppendLine("Created By       : " + Environment.UserName + " on " + Environment.MachineName);
+                sbMan.AppendLine("Strategy         : " + strategy);
+                sbMan.AppendLine("Base Version     : V" + curVer);
+                sbMan.AppendLine("Max Sibling Ver  : V" + maxExistingVer);
+                sbMan.AppendLine("Agent Version    : " + AGENT_VERSION);
+                sbMan.AppendLine("TIA Version      : " + TIA_TARGET_VERSION);
+                sbMan.AppendLine("================================================================================");
+                File.WriteAllText(manifestPath, sbMan.ToString(), Encoding.UTF8);
+            }
+            catch { }
 
             return new Dictionary<string, object>
             {
                 { "status", "Success" },
+                { "strategy", strategy },
                 { "oldProjectName", curName },
                 { "newProjectName", _activeProject.Name },
                 { "newProjectPath", _activeProject.Path.FullName },
-                { "message", "Project successfully saved as new version: " + _activeProject.Name }
+                { "message", L("Проект успешно сохранен как новая версия: ", "Project successfully saved as new version: ") + _activeProject.Name }
             };
         }
 
         // --- Helpers ---
 
-private static void EnsureConnected()
+        private static bool EnsureConnected(bool throwOnError = true)
         {
-            if (_activeProject == null)
+            if (IsTiaConnected()) return true;
+
+            string res = DoConnectProcess(new Dictionary<string, object>());
+            if (IsTiaConnected())
             {
-                string res = DoConnectProcess(new Dictionary<string, object>());
-                if (_activeProject == null)
+                try
                 {
-                    throw new InvalidOperationException(res + "\n(Подсказка: Проверьте, запущен ли TIA Portal, обновлён ли Whitelist и запущен ли инструмент с правами Администратора, если TIA Portal запущен от имени Администратора.)");
+                    if (_activeProject != null && _activeProject.Path != null)
+                    {
+                        _lastProjectPath = _activeProject.Path.FullName;
+                        SaveSettings();
+                    }
+                }
+                catch { }
+                return true;
+            }
+
+            if (throwOnError)
+            {
+                throw new InvalidOperationException(res + "\n(" + L(
+                    "Подсказка: Проверьте, запущен ли TIA Portal, обновлён ли Whitelist и запущен ли инструмент с правами Администратора, если TIA запущен от Администратора. Либо откройте проект в фоновом режиме [P].",
+                    "Hint: Check if TIA Portal is running, Whitelist is updated, or run as Admin if TIA is Admin. Or open project in headless mode [P].") + ")");
+            }
+            return false;
+        }
+
+        private static string DoExportTagsCsv(PlcSoftware plc, string outputPath)
+        {
+            var allTables = new List<Dictionary<string, object>>();
+            CollectTagsRecursive(plc.TagTableGroup, allTables, "");
+
+            var sb = new StringBuilder();
+            string sep = _csvDelimiter;
+            sb.AppendLine(string.Format("Name{0}Path{0}DataType{0}LogicalAddress{0}Comment", sep));
+
+            int tagCount = 0;
+            foreach (var tbl in allTables)
+            {
+                string tPath = tbl["path"].ToString();
+                var tags = tbl["tags"] as List<Dictionary<string, object>>;
+                if (tags == null) continue;
+                foreach (var tg in tags)
+                {
+                    string name = tg["name"].ToString();
+                    string dt = tg["dataType"].ToString();
+                    string addr = tg["logicalAddress"].ToString();
+                    string comment = "";
+                    if (_exportIncludeComments && tg.ContainsKey("comment") && tg["comment"] != null)
+                    {
+                        comment = tg["comment"].ToString().Replace("\r", " ").Replace("\n", " ").Replace(sep, " ");
+                    }
+                    sb.AppendLine(string.Format("{0}{1}{2}{1}{3}{1}{4}{1}{5}", name, sep, tPath, dt, addr, comment));
+                    tagCount++;
                 }
             }
+
+            string dir = Path.GetDirectoryName(outputPath);
+            if (!string.IsNullOrEmpty(dir) && !Directory.Exists(dir)) Directory.CreateDirectory(dir);
+
+            File.WriteAllText(outputPath, sb.ToString(), Encoding.UTF8);
+            return string.Format(L("Экспортировано {0} тегов в CSV: {1} (Комментарии: {2})",
+                                   "Exported {0} tags to CSV: {1} (Comments: {2})"),
+                                 tagCount, outputPath, _exportIncludeComments ? L("Включены", "Included") : L("Отключены", "Excluded"));
+        }
+
+        private static Dictionary<string, object> DoCheckTags(PlcSoftware plc)
+        {
+            var allTables = new List<Dictionary<string, object>>();
+            CollectTagsRecursive(plc.TagTableGroup, allTables, "");
+
+            int totalTags = 0;
+            int withComments = 0;
+            int withoutComments = 0;
+            var addressMap = new Dictionary<string, List<string>>(StringComparer.OrdinalIgnoreCase);
+            var unreferencedTags = new List<string>();
+
+            // Get CrossReferences
+            var crossRefs = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+            try
+            {
+                var auditRes = DoAuditProject(new Dictionary<string, object>());
+                var deadTags = auditRes.ContainsKey("deadTags") ? auditRes["deadTags"] as List<string> : null;
+                if (deadTags != null) unreferencedTags = deadTags;
+            }
+            catch { }
+
+            foreach (var tbl in allTables)
+            {
+                var tags = tbl["tags"] as List<Dictionary<string, object>>;
+                if (tags == null) continue;
+                foreach (var tg in tags)
+                {
+                    totalTags++;
+                    string tName = tg["name"].ToString();
+                    string addr = tg["logicalAddress"].ToString();
+                    string comm = tg.ContainsKey("comment") && tg["comment"] != null ? tg["comment"].ToString().Trim() : "";
+
+                    if (!string.IsNullOrEmpty(comm)) withComments++;
+                    else withoutComments++;
+
+                    if (!string.IsNullOrEmpty(addr))
+                    {
+                        if (!addressMap.ContainsKey(addr)) addressMap[addr] = new List<string>();
+                        addressMap[addr].Add(tName);
+                    }
+                }
+            }
+
+            var duplicateAddresses = new Dictionary<string, List<string>>();
+            foreach (var kvp in addressMap)
+            {
+                if (kvp.Value.Count > 1) duplicateAddresses[kvp.Key] = kvp.Value;
+            }
+
+            return new Dictionary<string, object>
+            {
+                { "totalTags", totalTags },
+                { "tagsWithComments", withComments },
+                { "tagsWithoutComments", withoutComments },
+                { "duplicateAddressCount", duplicateAddresses.Count },
+                { "duplicateAddresses", duplicateAddresses },
+                { "unreferencedTagCount", unreferencedTags.Count },
+                { "unreferencedTags", unreferencedTags }
+            };
         }
 
         private static Device FindDevice(string name)
@@ -6793,6 +7443,41 @@ private static void EnsureConnected()
                         string inPath = args.ContainsKey("inputDirectory") ? args["inputDirectory"] as string : "";
                         data = BatchImport(FindPlcSoftware(FindDevice(null)), inPath);
                         break;
+                    case "tia_get_settings":
+                        data = _settings;
+                        break;
+                    case "tia_update_settings":
+                        if (args != null)
+                        {
+                            if (args.ContainsKey("language")) _currentLanguage = args["language"].ToString();
+                            if (args.ContainsKey("exportIncludeComments")) _exportIncludeComments = Convert.ToBoolean(args["exportIncludeComments"]);
+                            if (args.ContainsKey("csvDelimiter")) _csvDelimiter = args["csvDelimiter"].ToString();
+                            if (args.ContainsKey("displayPageSize")) _displayPageSize = Convert.ToInt32(args["displayPageSize"]);
+                            SaveSettings();
+                        }
+                        data = _settings;
+                        break;
+                    case "tia_get_system_health":
+                        data = new Dictionary<string, object>
+                        {
+                            { "isConnected", IsTiaConnected() },
+                            { "attachedPid", _attachedPid },
+                            { "projectName", SafeGetProjectName() },
+                            { "lastProjectPath", _lastProjectPath },
+                            { "language", _currentLanguage },
+                            { "exportIncludeComments", _exportIncludeComments },
+                            { "csvDelimiter", _csvDelimiter }
+                        };
+                        break;
+                    case "tia_export_tags_csv":
+                        EnsureConnected();
+                        string tagCsvOut = args != null && args.ContainsKey("outputPath") ? args["outputPath"] as string : @"C:\Users\aa.fedin\Desktop\Tia_18_Agent\Tags_" + _activeProject.Name + ".csv";
+                        data = DoExportTagsCsv(FindPlcSoftware(FindDevice(null)), tagCsvOut);
+                        break;
+                    case "tia_check_tags":
+                        EnsureConnected();
+                        data = DoCheckTags(FindPlcSoftware(FindDevice(null)));
+                        break;
                     case "tia_clean_garbage":
                         EnsureConnected();
                         {
@@ -7030,9 +7715,53 @@ private static void EnsureConnected()
         // CLI ENGINE
         // ====================================================================
 
+        private static void RunHeadlessCli(string[] args)
+        {
+            if (args.Length < 3)
+            {
+                Console.WriteLine("Usage: --headless <project.ap18> <command> [--json]");
+                return;
+            }
+            string ap18Path = args[1];
+            string subCmd = args[2];
+            var subArgs = new List<string>();
+            subArgs.Add(subCmd);
+            for (int i = 3; i < args.Length; i++) subArgs.Add(args[i]);
+
+            try
+            {
+                Console.WriteLine("Opening headless: " + ap18Path);
+                DoOpenHeadless(new Dictionary<string, object> { { "projectPath", ap18Path } });
+                RunCli(subArgs.ToArray());
+            }
+            finally
+            {
+                try
+                {
+                    if (_activeTiaPortal != null)
+                    {
+                        _activeTiaPortal.Dispose();
+                        _activeTiaPortal = null;
+                        _activeProject = null;
+                    }
+                }
+                catch { }
+            }
+        }
+
         private static void RunCli(string[] args)
         {
             string cmd = args[0].ToLower();
+            bool isJson = false;
+            for (int i = 0; i < args.Length; i++)
+            {
+                if (args[i].Equals("--json", StringComparison.OrdinalIgnoreCase))
+                {
+                    isJson = true;
+                    break;
+                }
+            }
+
             try
             {
                 switch (cmd)
@@ -7046,12 +7775,14 @@ private static void EnsureConnected()
                         break;
                     case "save":
                         DoConnectProcess(new Dictionary<string, object>());
-                        Console.WriteLine(DoSaveProject());
+                        string saveRes = DoSaveProject();
+                        if (isJson) Console.WriteLine(_serializer.Serialize(new Dictionary<string, object> { { "status", "Success" }, { "message", saveRes } }));
+                        else Console.WriteLine(saveRes);
                         break;
                     case "save-version":
                         DoConnectProcess(new Dictionary<string, object>());
                         string customName = args.Length > 1 ? args[1] : null;
-                        var sArgs = new Dictionary<string, object>();
+                        var sArgs = new Dictionary<string, object> { { "nonInteractive", true } };
                         if (!string.IsNullOrEmpty(customName)) sArgs["customName"] = customName;
                         Console.WriteLine(_serializer.Serialize(DoSaveProjectVersion(sArgs)));
                         break;
@@ -7093,14 +7824,39 @@ private static void EnsureConnected()
                         var dHw = FindDevice(null);
                         Console.WriteLine(_serializer.Serialize(GetHardwareConfig(dHw, FindPlcSoftware(dHw))));
                         break;
+                    case "check-tags":
+                    case "--check-tags":
+                        DoConnectProcess(new Dictionary<string, object>());
+                        Console.WriteLine(_serializer.Serialize(DoCheckTags(FindPlcSoftware(FindDevice(null)))));
+                        break;
+                    case "export-tags":
+                    case "tags-csv":
+                        DoConnectProcess(new Dictionary<string, object>());
+                        string outCsv = args.Length > 1 && !args[1].StartsWith("--") ? args[1] : @"C:\Users\aa.fedin\Desktop\Tia_18_Agent\Tags_" + _activeProject.Name + ".csv";
+                        string csvRes = DoExportTagsCsv(FindPlcSoftware(FindDevice(null)), outCsv);
+                        if (isJson) Console.WriteLine(_serializer.Serialize(new Dictionary<string, object> { { "status", "Success" }, { "message", csvRes }, { "outputPath", outCsv } }));
+                        else Console.WriteLine(csvRes);
+                        break;
                     case "export-all":
                     case "--export-all":
                         DoConnectProcess(new Dictionary<string, object>());
-                        string outP = args.Length > 1 ? args[1] : @"C:\Users\aa.fedin\Desktop\Tia_18_Agent\Export_" + _activeProject.Name;
-                        Console.WriteLine(BatchExport(FindPlcSoftware(FindDevice(null)), outP, "all"));
+                        string outP = args.Length > 1 && !args[1].StartsWith("--") ? args[1] : @"C:\Users\aa.fedin\Desktop\Tia_18_Agent\Export_" + _activeProject.Name;
+                        string expRes = BatchExport(FindPlcSoftware(FindDevice(null)), outP, "all");
+                        if (isJson) Console.WriteLine(_serializer.Serialize(new Dictionary<string, object> { { "status", "Success" }, { "message", expRes }, { "outputDirectory", outP } }));
+                        else Console.WriteLine(expRes);
+                        break;
+                    case "blocks":
+                    case "--blocks":
+                        DoConnectProcess(new Dictionary<string, object>());
+                        Console.WriteLine(_serializer.Serialize(DoListBlocks(new Dictionary<string, object>())));
+                        break;
+                    case "devices":
+                    case "--devices":
+                        DoConnectProcess(new Dictionary<string, object>());
+                        Console.WriteLine(_serializer.Serialize(DoListDevices()));
                         break;
                     default:
-                        Console.WriteLine("TiaPortal18Agent v" + AGENT_VERSION + ". Commands: list-processes, test-attach, audit, compile, call-tree, dependencies, memory, hardware, export-all, --watch, --mcp");
+                        Console.WriteLine("TiaPortal18Agent v" + AGENT_VERSION + ". Commands: list-processes, test-attach, audit, compile, call-tree, dependencies, memory, hardware, blocks, devices, check-tags, export-tags, export-all, --headless, --watch, --mcp, --json");
                         break;
                 }
             }
