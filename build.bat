@@ -31,6 +31,7 @@ if exist "%~dp0call_tree.json" copy /Y "%~dp0call_tree.json" "%DESKTOP_DIR%\" > 
 if exist "%~dp0README.md" copy /Y "%~dp0README.md" "%DESKTOP_DIR%\" > nul
 if exist "%~dp0tia.ps1" copy /Y "%~dp0tia.ps1" "%DESKTOP_DIR%\" > nul
 if exist "%~dp0crash_history.log" copy /Y "%~dp0crash_history.log" "%DESKTOP_DIR%\" > nul
+if exist "%~dp0.agents" xcopy /E /I /Y "%~dp0.agents" "%DESKTOP_DIR%\.agents" > nul
 
 echo 4. Registering Openness whitelist for Desktop folder...
 powershell -NoProfile -ExecutionPolicy Bypass -File "%~dp0register_whitelist.ps1" -ExePath "%DESKTOP_DIR%\TiaPortal18Agent.exe"
