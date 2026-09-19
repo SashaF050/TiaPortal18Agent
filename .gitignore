@@ -1,0 +1,26 @@
+# Visual Studio & Windows artifacts
+*.suo
+*.user
+*.userosscache
+*.sln.docstates
+.vs/
+bin/
+obj/
+
+# Temporary and build artifacts
+*.pdb
+*.tmp
+*.log
+*.bak
+*.pre_*
+out.txt
+out_ver.txt
+audit_*.txt
+test.cs
+test_*.ps1
+test_*.bat
+Hello.cs
+Hello.exe
+
+# Local backups
+Backups/
