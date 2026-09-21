@@ -22,6 +22,7 @@ using Siemens.Engineering.SW;
 using Siemens.Engineering.SW.Blocks;
 using Siemens.Engineering.SW.Tags;
 using Siemens.Engineering.SW.Types;
+using Siemens.Engineering.SW.ExternalSources;
 
 namespace TiaPortal18Agent
 {
@@ -49,7 +50,6 @@ namespace TiaPortal18Agent
     {
         private static readonly object _lock = new object();
         private static readonly string _logFile = Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "crash_history.log");
-        private static readonly string _desktopLogFile = @"C:\Users\aa.fedin\Desktop\Tia_18_Agent\crash_history.log";
 
         public static void Log(Exception ex, string context)
         {
@@ -74,15 +74,6 @@ namespace TiaPortal18Agent
 
                     string text = sb.ToString();
                     try { File.AppendAllText(_logFile, text, Encoding.UTF8); } catch { }
-                    try
-                    {
-                        if (Directory.Exists(@"C:\Users\aa.fedin\Desktop\Tia_18_Agent") &&
-                            !AppDomain.CurrentDomain.BaseDirectory.TrimEnd('\\', '/').Equals(@"C:\Users\aa.fedin\Desktop\Tia_18_Agent", StringComparison.OrdinalIgnoreCase))
-                        {
-                            File.AppendAllText(_desktopLogFile, text, Encoding.UTF8);
-                        }
-                    }
-                    catch { }
                 }
             }
             catch { }
@@ -103,15 +94,6 @@ namespace TiaPortal18Agent
 
                     string text = sb.ToString();
                     try { File.AppendAllText(_logFile, text, Encoding.UTF8); } catch { }
-                    try
-                    {
-                        if (Directory.Exists(@"C:\Users\aa.fedin\Desktop\Tia_18_Agent") &&
-                            !AppDomain.CurrentDomain.BaseDirectory.TrimEnd('\\', '/').Equals(@"C:\Users\aa.fedin\Desktop\Tia_18_Agent", StringComparison.OrdinalIgnoreCase))
-                        {
-                            File.AppendAllText(_desktopLogFile, text, Encoding.UTF8);
-                        }
-                    }
-                    catch { }
                 }
             }
             catch { }
@@ -124,10 +106,9 @@ namespace TiaPortal18Agent
             {
                 lock (_lock)
                 {
-                    string targetFile = File.Exists(_logFile) ? _logFile : (File.Exists(_desktopLogFile) ? _desktopLogFile : null);
-                    if (targetFile != null && File.Exists(targetFile))
+                    if (File.Exists(_logFile))
                     {
-                        var lines = File.ReadAllLines(targetFile, Encoding.UTF8);
+                        var lines = File.ReadAllLines(_logFile, Encoding.UTF8);
                         int start = Math.Max(0, lines.Length - maxLines);
                         for (int i = start; i < lines.Length; i++)
                             list.Add(lines[i]);
@@ -145,7 +126,6 @@ namespace TiaPortal18Agent
                 lock (_lock)
                 {
                     if (File.Exists(_logFile)) File.Delete(_logFile);
-                    if (File.Exists(_desktopLogFile)) File.Delete(_desktopLogFile);
                 }
             }
             catch { }
@@ -438,8 +418,8 @@ namespace TiaPortal18Agent
 
     public class Program
     {
-        public const string AGENT_VERSION = "2.4.0";
-        public const string BUILD_DATE = "2026-09-20";
+        public const string AGENT_VERSION = "2.5.0";
+        public const string BUILD_DATE = "2026-09-21";
         public const string TIA_TARGET_VERSION = "TIA Portal V14-V20 (V18 Native)";
 
         private static TiaPortal _activeTiaPortal = null;
@@ -675,13 +655,6 @@ namespace TiaPortal18Agent
                 string settingsFile = GetSettingsFilePath();
                 string json = _serializer.Serialize(_settings);
                 File.WriteAllText(settingsFile, json, Encoding.UTF8);
-
-                // Mirror to Desktop if directory exists
-                string desktopDir = @"C:\Users\aa.fedin\Desktop\Tia_18_Agent";
-                if (Directory.Exists(desktopDir))
-                {
-                    try { File.WriteAllText(Path.Combine(desktopDir, "agent_settings.json"), json, Encoding.UTF8); } catch { }
-                }
             }
             catch { }
         }
@@ -872,7 +845,6 @@ namespace TiaPortal18Agent
             InitConsole();
             LoadSettings();
             EnsureSelfWhitelisted();
-            SyncToDesktopDirectory();
             StartAutoConfirmWatcher();
 
             if (args == null || args.Length == 0)
@@ -906,44 +878,7 @@ namespace TiaPortal18Agent
 
         public static void SyncToDesktopDirectory()
         {
-            try
-            {
-                string desktopDir = @"C:\Users\aa.fedin\Desktop\Tia_18_Agent";
-                string currentDir = AppDomain.CurrentDomain.BaseDirectory.TrimEnd('\\', '/');
-                if (currentDir.Equals(desktopDir, StringComparison.OrdinalIgnoreCase)) return;
-
-                if (!Directory.Exists(desktopDir))
-                {
-                    Directory.CreateDirectory(desktopDir);
-                }
-
-                string[] filesToSync = new string[]
-                {
-                    "TiaPortal18Agent.cs",
-                    "TiaPortal18Agent.exe",
-                    "TiaPortal18Agent.exe.config",
-                    "build.bat",
-                    "register_whitelist.ps1",
-                    "call_tree.json",
-                    "README.md",
-                    "crash_history.log"
-                };
-
-                foreach (var fname in filesToSync)
-                {
-                    string src = Path.Combine(currentDir, fname);
-                    string dst = Path.Combine(desktopDir, fname);
-                    if (File.Exists(src))
-                    {
-                        try
-                        {
-                            File.Copy(src, dst, true);
-                        }
-                        catch { }
-                    }
-                }
-            }
-            catch { }
+            // Desktop mirroring deprecated. Files are kept in Favorites\Tia_18_Agent.
         }
 
         private static void PrintVersionInfo()
@@ -1235,10 +1170,10 @@ namespace TiaPortal18Agent
                 Console.ResetColor();
                 Console.WriteLine("────────────────────────────────────────────────────────────────────────────────");
                 Console.ForegroundColor = ConsoleColor.Yellow;
-                Console.WriteLine("   [S] " + L("Сохранить проект", "Save Project") + "     [V] " + L("Сохранить версию (V0→V1)", "Save Version (V0→V1)") + "     [P] " + L("Сменить / Открыть проект", "Switch / Open Project"));
+                Console.WriteLine("   [S] " + L("Сохранить проект", "Save Project") + "     [V] " + L("Сохранить версию (V0→V1)", "Save Version (V0→V1)") + "     [Z] " + L("Архив (.zap18)", "Archive (.zap18)") + "     [P] " + L("Сменить проект", "Switch Project"));
                 Console.ResetColor();
                 Console.WriteLine("────────────────────────────────────────────────────────────────────────────────");
-                Console.Write(" " + L("Выберите действие", "Select action") + " [0-9, R, M, D, S, V, P, Esc]: ");
+                Console.Write(" " + L("Выберите действие", "Select action") + " [0-9, R, M, D, S, V, Z, P, Esc]: ");
 
                 var key = Console.ReadKey(true);
                 if (key.Key == ConsoleKey.Escape || key.KeyChar == 'q' || key.KeyChar == 'Q' || key.KeyChar == 'й' || key.KeyChar == 'Й') break;
@@ -1254,7 +1189,8 @@ namespace TiaPortal18Agent
                                             key.KeyChar == 'M' || key.KeyChar == 'ь' || key.KeyChar == 'Ь' ||
                                             key.KeyChar == 's' || key.KeyChar == 'S' || key.KeyChar == 'ы' ||
                                             key.KeyChar == 'Ы' || key.KeyChar == 'v' || key.KeyChar == 'V' ||
-                                            key.KeyChar == 'м' || key.KeyChar == 'М');
+                                            key.KeyChar == 'м' || key.KeyChar == 'М' || key.KeyChar == 'z' ||
+                                            key.KeyChar == 'Z' || key.KeyChar == 'я' || key.KeyChar == 'Я');
 
                     if (requiresProject && !IsTiaConnected())
                     {
@@ -1299,6 +1235,31 @@ namespace TiaPortal18Agent
                         Console.WriteLine(res["message"]);
                         Console.ResetColor();
                         Console.WriteLine(L("Нажмите любую клавишу для продолжения...", "Press any key to continue..."));
+                        Console.ReadKey(true);
+                    }
+                    else if (key.KeyChar == 'z' || key.KeyChar == 'Z' || key.KeyChar == 'я' || key.KeyChar == 'Я')
+                    {
+                        Console.WriteLine();
+                        Console.ForegroundColor = ConsoleColor.Cyan;
+                        Console.WriteLine("================================================================================");
+                        Console.WriteLine(" " + L("АРХИВАЦИЯ ПРОЕКТА В .ZAP18 (Openness DiscardRestorableDataAndCompressed)",
+                                               "PROJECT ARCHIVING TO .ZAP18 (Openness DiscardRestorableDataAndCompressed)"));
+                        Console.WriteLine("================================================================================");
+                        Console.ResetColor();
+                        Console.WriteLine(" " + L("Текущий проект: ", "Active project: ") + SafeGetProjectName());
+                        Console.Write(" " + L("Введите имя архива (Enter для стандартного имени): ", "Enter archive name (Enter for default): "));
+                        string arcNameInput = Console.ReadLine();
+                        var arcArgs = new Dictionary<string, object>();
+                        if (!string.IsNullOrWhiteSpace(arcNameInput)) arcArgs["archiveName"] = arcNameInput.Trim();
+
+                        Console.WriteLine(" " + L("Архивация проекта... Пожалуйста, подождите.", "Archiving project... Please wait."));
+                        var arcRes = DoArchiveProject(arcArgs);
+                        Console.ForegroundColor = ConsoleColor.Green;
+                        Console.WriteLine("\n ✓ " + arcRes["message"]);
+                        Console.WriteLine("   " + L("Файл: ", "File: ") + arcRes["archivePath"]);
+                        Console.WriteLine("   " + L("Размер: ", "Size: ") + arcRes["sizeFormatted"]);
+                        Console.ResetColor();
+                        Console.WriteLine("\n" + L("Нажмите любую клавишу для продолжения...", "Press any key to continue..."));
                         Console.ReadKey(true);
                     }
                 }
@@ -1958,7 +1919,7 @@ namespace TiaPortal18Agent
 
             if (k.KeyChar == '1')
             {
-                string defDir = @"C:\Users\aa.fedin\Desktop\Tia_18_Agent\Export_" + _activeProject.Name;
+                string defDir = Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "Export_" + _activeProject.Name);
                 Console.Write(" " + L("Путь экспорта", "Export path") + " [" + defDir + "]: ");
                 string path = Console.ReadLine();
                 if (string.IsNullOrWhiteSpace(path)) path = defDir;
@@ -1987,7 +1948,7 @@ namespace TiaPortal18Agent
             }
             else if (k.KeyChar == '3')
             {
-                string defCsv = @"C:\Users\aa.fedin\Desktop\Tia_18_Agent\Tags_" + _activeProject.Name + ".csv";
+                string defCsv = Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "Tags_" + _activeProject.Name + ".csv");
                 Console.Write(" " + L("Путь к CSV файлу", "Path to CSV file") + " [" + defCsv + "]: ");
                 string csvP = Console.ReadLine();
                 if (string.IsNullOrWhiteSpace(csvP)) csvP = defCsv;
@@ -3556,8 +3517,7 @@ namespace TiaPortal18Agent
                 }
                 else if (k.Key == ConsoleKey.E || k.KeyChar == 'e' || k.KeyChar == 'E' || k.KeyChar == 'у' || k.KeyChar == 'У')
                 {
-                    string desktopDir = @"C:\Users\aa.fedin\Desktop\Tia_18_Agent";
-                    string csvPath = Path.Combine(desktopDir, "Kuka_Signals_" + targetTableName + ".csv");
+                    string csvPath = Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "Kuka_Signals_" + targetTableName + ".csv");
                     try
                     {
                         var sbCsv = new StringBuilder();
@@ -5949,7 +5909,7 @@ private static void ShowComprehensiveDiagnostics()
             string logEntry = "[" + _latestWatchdogStatus.LastScanTime + "] PID=" + _attachedPid + " Blocks=" + items.Count + " Dead=" + uncalled + " Errs=" + errs + " Warns=" + warns + " Modified=" + _latestWatchdogStatus.IsProjectModified;
             try
             {
-                File.AppendAllText(@"C:\Users\aa.fedin\Desktop\Tia_18_Agent\watchdog.log", logEntry + Environment.NewLine);
+                File.AppendAllText(Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "watchdog.log"), logEntry + Environment.NewLine);
             }
             catch
             {
@@ -6278,8 +6238,12 @@ private static string DoConnectProcess(Dictionary<string, object> args)
         {
             EnsureConnected();
             string deviceName = args.ContainsKey("deviceName") ? args["deviceName"] as string : null;
-            string blockPath = args["blockPath"] as string;
-            string outputPath = args["outputPath"] as string;
+            string blockPath = args.ContainsKey("blockPath") ? args["blockPath"] as string : "";
+            string outputPath = null;
+            if (args.ContainsKey("outputPath") && args["outputPath"] != null) outputPath = args["outputPath"] as string;
+            else if (args.ContainsKey("outputFilePath") && args["outputFilePath"] != null) outputPath = args["outputFilePath"] as string;
+            if (string.IsNullOrEmpty(outputPath)) outputPath = Path.Combine(AppDomain.CurrentDomain.BaseDirectory, blockPath + ".xml");
+            outputPath = Path.GetFullPath(outputPath);
 
             Device dev = FindDevice(deviceName);
             var plc = FindPlcSoftware(dev);
@@ -6288,6 +6252,7 @@ private static string DoConnectProcess(Dictionary<string, object> args)
 
             string outDir = Path.GetDirectoryName(outputPath);
             if (!string.IsNullOrEmpty(outDir) && !Directory.Exists(outDir)) Directory.CreateDirectory(outDir);
+            if (File.Exists(outputPath)) { try { File.Delete(outputPath); } catch { } }
 
             block.Export(new FileInfo(outputPath), ExportOptions.WithDefaults);
             return "Block '" + blockPath + "' successfully exported to " + outputPath;
@@ -6332,7 +6297,40 @@ private static string DoConnectProcess(Dictionary<string, object> args)
                 var block = FindBlockByPath(plc.BlockGroup, blockPath);
                 if (block == null) return "Error: Block not found: " + blockPath;
 
-                block.Export(new FileInfo(tempXml), ExportOptions.WithDefaults);
+                try
+                {
+                    block.Export(new FileInfo(tempXml), ExportOptions.WithDefaults);
+                }
+                catch (Exception ex)
+                {
+                    if (ex.Message.IndexOf("Inconsistent", StringComparison.OrdinalIgnoreCase) >= 0 ||
+                        (ex.InnerException != null && ex.InnerException.Message.IndexOf("Inconsistent", StringComparison.OrdinalIgnoreCase) >= 0))
+                    {
+                        Log("Block '" + blockPath + "' is inconsistent. Attempting auto-compilation to resolve...");
+                        try
+                        {
+                            var compilable = plc.GetService<ICompilable>();
+                            if (compilable != null)
+                            {
+                                compilable.Compile();
+                                block.Export(new FileInfo(tempXml), ExportOptions.WithDefaults);
+                            }
+                            else
+                            {
+                                return "Error: Block '" + blockPath + "' is inconsistent and PLC does not support compilation.";
+                            }
+                        }
+                        catch (Exception compEx)
+                        {
+                            return "Error: Block '" + blockPath + "' is inconsistent and auto-compilation failed: " + compEx.Message;
+                        }
+                    }
+                    else
+                    {
+                        return "Error exporting block '" + blockPath + "': " + ex.Message;
+                    }
+                }
+
                 if (!File.Exists(tempXml)) return "Error: Failed to export block XML.";
 
                 var doc = new XmlDocument();
@@ -6347,27 +6345,55 @@ private static string DoConnectProcess(Dictionary<string, object> args)
                     stNodes = doc.GetElementsByTagName("StructuredText");
                 }
 
+                int targetNet = args != null && args.ContainsKey("networkNumber") && args["networkNumber"] != null ? Convert.ToInt32(args["networkNumber"]) : 0;
+                int startNet = args != null && args.ContainsKey("startNetwork") && args["startNetwork"] != null ? Convert.ToInt32(args["startNetwork"]) : 0;
+                int endNet = args != null && args.ContainsKey("endNetwork") && args["endNetwork"] != null ? Convert.ToInt32(args["endNetwork"]) : 0;
+                bool outlineOnly = args != null && args.ContainsKey("outlineOnly") && Convert.ToBoolean(args["outlineOnly"]);
+
                 if (stNodes != null && stNodes.Count > 0)
                 {
+                    if (outlineOnly)
+                    {
+                        var outSb = new StringBuilder();
+                        outSb.AppendLine(string.Format("// Block Outline: {0} (Total Networks: {1})", block.Name, stNodes.Count));
+                        outSb.AppendLine("// ========================================================");
+                        for (int i = 0; i < stNodes.Count; i++)
+                        {
+                            string netTitle = ExtractNetworkTitle(stNodes[i], i + 1);
+                            outSb.AppendLine(string.Format("// Network {0,2}: {1}", i + 1, !string.IsNullOrEmpty(netTitle) ? netTitle : "(Untitled)"));
+                        }
+                        return outSb.ToString().TrimEnd();
+                    }
+
                     var sb = new StringBuilder();
                     for (int i = 0; i < stNodes.Count; i++)
                     {
-                        if (stNodes.Count > 1)
-                        {
-                            sb.AppendLine("// ========================================================");
-                            sb.AppendLine("// Network " + (i + 1));
-                            sb.AppendLine("// ========================================================");
-                        }
+                        int netIndex = i + 1;
+                        if (targetNet > 0 && netIndex != targetNet) continue;
+                        if (startNet > 0 && netIndex < startNet) continue;
+                        if (endNet > 0 && netIndex > endNet) continue;
+
+                        string netTitle = ExtractNetworkTitle(stNodes[i], netIndex);
+                        sb.AppendLine("// ========================================================");
+                        sb.AppendLine("// Network " + netIndex + (!string.IsNullOrEmpty(netTitle) ? ": " + netTitle : ""));
+                        sb.AppendLine("// ========================================================");
+
                         DecompileStructuredTextNode(stNodes[i], sb);
                         sb.AppendLine();
                     }
+
+                    if (targetNet > 0 && sb.Length == 0)
+                    {
+                        return string.Format("// Network {0} not found. Block '{1}' has {2} network(s).", targetNet, block.Name, stNodes.Count);
+                    }
+
                     return sb.ToString().TrimEnd();
                 }
 
                 var ifaceNodes = doc.GetElementsByTagName("Interface");
                 if (ifaceNodes.Count > 0)
                 {
-                    return "// Block is not SCL (or DB/LAD).\n// Interface XML:\n" + ifaceNodes[0].OuterXml;
+                    return DecompileInterfaceXmlToScl(ifaceNodes[0], block.GetType().Name, block.Name);
                 }
 
                 return doc.InnerXml;
@@ -6415,11 +6441,81 @@ private static string DoConnectProcess(Dictionary<string, object> args)
                     string commentText = txt != null ? txt.InnerText : child.InnerText;
                     sb.Append("// " + commentText);
                 }
+                else if (local == "CallInfo")
+                {
+                    var instNode = child.SelectSingleNode(".//*[local-name()='Instance']");
+                    if (instNode == null)
+                    {
+                        string callee = child.Attributes != null && child.Attributes["Name"] != null ? child.Attributes["Name"].Value : "";
+                        if (!string.IsNullOrEmpty(callee)) sb.Append("\"" + callee + "\"");
+                    }
+                    DecompileStructuredTextNode(child, sb);
+                }
+                else if (local == "Instance")
+                {
+                    string instScope = child.Attributes != null && child.Attributes["Scope"] != null ? child.Attributes["Scope"].Value : "";
+                    string instPrefix = instScope == "LocalVariable" ? "#" : "";
+                    var comp = child.SelectSingleNode(".//*[local-name()='Component']");
+                    if (comp != null && comp.Attributes != null && comp.Attributes["Name"] != null)
+                    {
+                        string instName = comp.Attributes["Name"].Value;
+                        if (instScope == "GlobalVariable") sb.Append("\"" + instName + "\"");
+                        else sb.Append(instPrefix + instName);
+                    }
+                }
+                else if (local == "Parameter")
+                {
+                    string pName = child.Attributes != null && child.Attributes["Name"] != null ? child.Attributes["Name"].Value : "";
+                    if (!string.IsNullOrEmpty(pName)) sb.Append(pName);
+                    DecompileStructuredTextNode(child, sb);
+                }
                 else
                 {
                     DecompileStructuredTextNode(child, sb);
                 }
             }
+        }
+
+        private static string ExtractNetworkTitle(XmlNode stNode, int netNum)
+        {
+            try
+            {
+                XmlNode cu = stNode;
+                while (cu != null && cu.LocalName != "CompileUnit") cu = cu.ParentNode;
+
+                if (cu != null)
+                {
+                    var titleNode = cu.SelectSingleNode(".//*[local-name()='MultilingualText'][@CompositionName='Title']//*[local-name()='MultilingualTextItem']");
+                    if (titleNode != null && titleNode.Attributes != null && titleNode.Attributes["TextValue"] != null)
+                    {
+                        string tVal = titleNode.Attributes["TextValue"].Value;
+                        if (!string.IsNullOrWhiteSpace(tVal)) return tVal.Trim();
+                    }
+                    var commentNode = cu.SelectSingleNode(".//*[local-name()='MultilingualText'][@CompositionName='Comment']//*[local-name()='MultilingualTextItem']");
+                    if (commentNode != null && commentNode.Attributes != null && commentNode.Attributes["TextValue"] != null)
+                    {
+                        string cVal = commentNode.Attributes["TextValue"].Value;
+                        if (!string.IsNullOrWhiteSpace(cVal)) return cVal.Trim();
+                    }
+                }
+
+                // If no XML title, peek first line of SCL (look for REGION or // comment)
+                var tempSb = new StringBuilder();
+                DecompileStructuredTextNode(stNode, tempSb);
+                string firstLines = tempSb.ToString();
+                using (var sr = new StringReader(firstLines))
+                {
+                    string line;
+                    while ((line = sr.ReadLine()) != null)
+                    {
+                        line = line.Trim();
+                        if (line.StartsWith("REGION", StringComparison.OrdinalIgnoreCase)) return line;
+                        if (line.StartsWith("//")) return line.TrimStart('/', ' ');
+                    }
+                }
+            }
+            catch { }
+            return "";
         }
 
         private static void DecompileAccessNode(XmlNode accessNode, StringBuilder sb, string scope, string prefix)
@@ -6480,6 +6576,1676 @@ private static string DoConnectProcess(Dictionary<string, object> args)
                     DecompileStructuredTextNode(child, sb);
                 }
             }
+        }
+
+        // ====================================================================
+        // SCL INTERFACE DECOMPILER & ACCELERATED EXPLORATION (v2.5.0)
+        // ====================================================================
+
+        private static string DecompileInterfaceXmlToScl(XmlNode ifaceNode, string blockTypeName, string blockName, string sectionFilter = null)
+        {
+            var sb = new StringBuilder();
+            bool isDb = blockTypeName.IndexOf("DB", StringComparison.OrdinalIgnoreCase) >= 0;
+            bool isFb = blockTypeName.IndexOf("FB", StringComparison.OrdinalIgnoreCase) >= 0;
+            bool isFc = blockTypeName.IndexOf("FC", StringComparison.OrdinalIgnoreCase) >= 0;
+            bool isUdt = blockTypeName.IndexOf("Type", StringComparison.OrdinalIgnoreCase) >= 0 || blockTypeName.IndexOf("UDT", StringComparison.OrdinalIgnoreCase) >= 0;
+
+            if (isDb)
+            {
+                sb.AppendLine("DATA_BLOCK \"" + blockName + "\"");
+                sb.AppendLine("{ S7_Optimized_Access := 'TRUE' }");
+                sb.AppendLine("VERSION : 0.1");
+            }
+            else if (isFb)
+            {
+                sb.AppendLine("FUNCTION_BLOCK \"" + blockName + "\"");
+                sb.AppendLine("{ S7_Optimized_Access := 'TRUE' }");
+                sb.AppendLine("VERSION : 0.1");
+            }
+            else if (isFc)
+            {
+                sb.AppendLine("FUNCTION \"" + blockName + "\" : Void");
+                sb.AppendLine("{ S7_Optimized_Access := 'TRUE' }");
+                sb.AppendLine("VERSION : 0.1");
+            }
+            else if (isUdt)
+            {
+                sb.AppendLine("TYPE \"" + blockName + "\"");
+                sb.AppendLine("VERSION : 0.1");
+                sb.AppendLine("STRUCT");
+            }
+
+            var sections = ifaceNode.SelectNodes(".//*[local-name()='Section']");
+            if (sections != null)
+            {
+                foreach (XmlNode sec in sections)
+                {
+                    string secName = sec.Attributes != null && sec.Attributes["Name"] != null ? sec.Attributes["Name"].Value : "";
+                    if (!string.IsNullOrEmpty(sectionFilter) && !secName.Equals(sectionFilter, StringComparison.OrdinalIgnoreCase)) continue;
+                    string sclKeyword = "";
+                    switch (secName)
+                    {
+                        case "Input": sclKeyword = "VAR_INPUT"; break;
+                        case "Output": sclKeyword = "VAR_OUTPUT"; break;
+                        case "InOut": sclKeyword = "VAR_IN_OUT"; break;
+                        case "Static": sclKeyword = isDb || isFb ? "VAR" : "VAR_STAT"; break;
+                        case "Temp": sclKeyword = "VAR_TEMP"; break;
+                        case "Constant": sclKeyword = "VAR CONSTANT"; break;
+                        case "Return": break;
+                        default: sclKeyword = "VAR // Section: " + secName; break;
+                    }
+
+                    var members = sec.SelectNodes("./*[local-name()='Member']");
+                    if (members != null && members.Count > 0 && !string.IsNullOrEmpty(sclKeyword))
+                    {
+                        sb.AppendLine(sclKeyword);
+                        foreach (XmlNode mem in members)
+                        {
+                            FormatMemberToScl(mem, sb, "    ");
+                        }
+                        sb.AppendLine("END_VAR");
+                    }
+                }
+            }
+
+            if (isDb)
+            {
+                sb.AppendLine("BEGIN");
+                sb.AppendLine("END_DATA_BLOCK");
+            }
+            else if (isFb)
+            {
+                sb.AppendLine("BEGIN");
+                sb.AppendLine("    // FB Logic...");
+                sb.AppendLine("END_FUNCTION_BLOCK");
+            }
+            else if (isFc)
+            {
+                sb.AppendLine("BEGIN");
+                sb.AppendLine("    // FC Logic...");
+                sb.AppendLine("END_FUNCTION");
+            }
+            else if (isUdt)
+            {
+                sb.AppendLine("END_STRUCT;");
+                sb.AppendLine("END_TYPE");
+            }
+
+            return sb.ToString().TrimEnd();
+        }
+
+        private static void FormatMemberToScl(XmlNode memberNode, StringBuilder sb, string indent)
+        {
+            string name = memberNode.Attributes != null && memberNode.Attributes["Name"] != null ? memberNode.Attributes["Name"].Value : "";
+            string dtype = memberNode.Attributes != null && memberNode.Attributes["Datatype"] != null ? memberNode.Attributes["Datatype"].Value : "Void";
+
+            string comment = "";
+            var commentNode = memberNode.SelectSingleNode(".//*[local-name()='MultiLanguageText']");
+            if (commentNode != null && !string.IsNullOrEmpty(commentNode.InnerText))
+            {
+                comment = " // " + commentNode.InnerText.Trim();
+            }
+
+            string startVal = "";
+            var startValNode = memberNode.SelectSingleNode(".//*[local-name()='StartValue']");
+            if (startValNode != null && !string.IsNullOrEmpty(startValNode.InnerText))
+            {
+                startVal = " := " + startValNode.InnerText.Trim();
+            }
+
+            var nestedMembers = memberNode.SelectNodes("./*[local-name()='Member']");
+            if (nestedMembers != null && nestedMembers.Count > 0)
+            {
+                sb.AppendLine(indent + "\"" + name + "\" : Struct" + comment);
+                foreach (XmlNode childMem in nestedMembers)
+                {
+                    FormatMemberToScl(childMem, sb, indent + "    ");
+                }
+                sb.AppendLine(indent + "END_STRUCT;");
+            }
+            else
+            {
+                sb.AppendLine(indent + "\"" + name + "\" : " + dtype + startVal + ";" + comment);
+            }
+        }
+
+        private static string DoReadBlockInterface(Dictionary<string, object> args)
+        {
+            EnsureConnected();
+            string deviceName = args != null && args.ContainsKey("deviceName") ? args["deviceName"] as string : null;
+            string blockPath = args != null && args.ContainsKey("blockPath") ? args["blockPath"] as string : "";
+            string secFilter = args != null && args.ContainsKey("sectionFilter") ? args["sectionFilter"] as string : null;
+
+            if (string.IsNullOrEmpty(blockPath)) throw new ArgumentException("blockPath is required.");
+
+            string tempXml = Path.Combine(Path.GetTempPath(), "tia_iface_" + Guid.NewGuid().ToString("N") + ".xml");
+            try
+            {
+                Device dev = FindDevice(deviceName);
+                var plc = FindPlcSoftware(dev);
+
+                var block = FindBlockByPath(plc.BlockGroup, blockPath);
+                if (block != null)
+                {
+                    try
+                    {
+                        block.Export(new FileInfo(tempXml), ExportOptions.WithDefaults);
+                    }
+                    catch (Exception ex)
+                    {
+                        if (ex.Message.IndexOf("Inconsistent", StringComparison.OrdinalIgnoreCase) >= 0 ||
+                            (ex.InnerException != null && ex.InnerException.Message.IndexOf("Inconsistent", StringComparison.OrdinalIgnoreCase) >= 0))
+                        {
+                            Log("Block '" + blockPath + "' is inconsistent. Attempting auto-compilation to resolve...");
+                            try
+                            {
+                                var compilable = plc.GetService<ICompilable>();
+                                if (compilable != null)
+                                {
+                                    compilable.Compile();
+                                    block.Export(new FileInfo(tempXml), ExportOptions.WithDefaults);
+                                }
+                            }
+                            catch (Exception compEx)
+                            {
+                                return "Error: Block '" + blockPath + "' is inconsistent and auto-compilation failed: " + compEx.Message;
+                            }
+                        }
+                        else
+                        {
+                            throw;
+                        }
+                    }
+
+                    if (!File.Exists(tempXml)) return "Error: Failed to export block XML.";
+
+                    var doc = new XmlDocument();
+                    doc.Load(tempXml);
+                    var ifaceNodes = doc.GetElementsByTagName("Interface");
+                    if (ifaceNodes.Count > 0)
+                    {
+                        return DecompileInterfaceXmlToScl(ifaceNodes[0], block.GetType().Name, block.Name, secFilter);
+                    }
+                    return "// No Interface section found in XML for block: " + block.Name;
+                }
+
+                var udt = FindTypeByPath(plc.TypeGroup, blockPath);
+                if (udt != null)
+                {
+                    udt.Export(new FileInfo(tempXml), ExportOptions.WithDefaults);
+                    if (!File.Exists(tempXml)) return "Error: Failed to export UDT XML.";
+
+                    var doc = new XmlDocument();
+                    doc.Load(tempXml);
+                    var ifaceNodes = doc.GetElementsByTagName("Interface");
+                    if (ifaceNodes.Count > 0)
+                    {
+                        return DecompileInterfaceXmlToScl(ifaceNodes[0], "UDT", udt.Name, secFilter);
+                    }
+                    return "// No Interface section found in XML for UDT: " + udt.Name;
+                }
+
+                return "Error: Block or UDT not found: " + blockPath;
+            }
+            finally
+            {
+                if (File.Exists(tempXml)) try { File.Delete(tempXml); } catch { }
+            }
+        }
+
+        private static Dictionary<string, object> DoSearchBlocks(Dictionary<string, object> args)
+        {
+            EnsureConnected();
+            string deviceName = args != null && args.ContainsKey("deviceName") ? args["deviceName"] as string : null;
+            string query = args != null && args.ContainsKey("query") ? (args["query"] as string ?? "").Trim() : "";
+            string typeFilter = args != null && args.ContainsKey("typeFilter") ? (args["typeFilter"] as string ?? "").Trim().ToUpper() : "";
+            string groupFilter = args != null && args.ContainsKey("groupFilter") ? (args["groupFilter"] as string ?? "").Trim() : "";
+            bool includeCode = args != null && args.ContainsKey("includeCode") && Convert.ToBoolean(args["includeCode"]);
+
+            Device dev = FindDevice(deviceName);
+            var plc = FindPlcSoftware(dev);
+
+            var allBlocks = new List<Dictionary<string, object>>();
+            CollectBlocksRecursive(plc.BlockGroup, allBlocks, "");
+
+            var allUdts = new List<Dictionary<string, object>>();
+            CollectTypesRecursive(plc.TypeGroup, allUdts, "");
+            foreach (var u in allUdts)
+            {
+                u["type"] = "UDT";
+                u["number"] = "-";
+                allBlocks.Add(u);
+            }
+
+            var results = new List<Dictionary<string, object>>();
+            Regex regex = null;
+            try
+            {
+                if (!string.IsNullOrEmpty(query) && (query.Contains("*") || query.Contains("?") || query.Contains("[") || query.Contains("^")))
+                {
+                    string pat = query.Replace("*", ".*").Replace("?", ".");
+                    regex = new Regex(pat, RegexOptions.IgnoreCase);
+                }
+            }
+            catch { }
+
+            foreach (var b in allBlocks)
+            {
+                string name = b.ContainsKey("name") && b["name"] != null ? b["name"].ToString() : "";
+                string type = b.ContainsKey("type") && b["type"] != null ? b["type"].ToString() : "";
+                string path = b.ContainsKey("path") && b["path"] != null ? b["path"].ToString() : "";
+                string number = b.ContainsKey("number") && b["number"] != null ? b["number"].ToString() : "";
+
+                if (!string.IsNullOrEmpty(typeFilter))
+                {
+                    if (typeFilter == "DB" && type.IndexOf("DB", StringComparison.OrdinalIgnoreCase) < 0) continue;
+                    else if (typeFilter == "FB" && type.IndexOf("FB", StringComparison.OrdinalIgnoreCase) < 0) continue;
+                    else if (typeFilter == "FC" && type.IndexOf("FC", StringComparison.OrdinalIgnoreCase) < 0) continue;
+                    else if (typeFilter == "OB" && type.IndexOf("OB", StringComparison.OrdinalIgnoreCase) < 0) continue;
+                    else if (typeFilter == "UDT" && type.IndexOf("UDT", StringComparison.OrdinalIgnoreCase) < 0 && type.IndexOf("Type", StringComparison.OrdinalIgnoreCase) < 0) continue;
+                }
+
+                if (!string.IsNullOrEmpty(groupFilter))
+                {
+                    if (path.IndexOf(groupFilter, StringComparison.OrdinalIgnoreCase) < 0) continue;
+                }
+
+                bool matched = false;
+                string matchSnippet = null;
+
+                if (string.IsNullOrEmpty(query))
+                {
+                    matched = true;
+                }
+                else
+                {
+                    if (regex != null)
+                    {
+                        matched = regex.IsMatch(name) || regex.IsMatch(path) || regex.IsMatch(number);
+                    }
+                    else
+                    {
+                        matched = name.IndexOf(query, StringComparison.OrdinalIgnoreCase) >= 0 ||
+                                  path.IndexOf(query, StringComparison.OrdinalIgnoreCase) >= 0 ||
+                                  number.Equals(query, StringComparison.OrdinalIgnoreCase);
+                    }
+
+                    if (!matched && includeCode && type != "UDT")
+                    {
+                        try
+                        {
+                            string scl = DoReadScl(new Dictionary<string, object> { { "deviceName", dev.Name }, { "blockPath", path } });
+                            if (!string.IsNullOrEmpty(scl) && scl.IndexOf(query, StringComparison.OrdinalIgnoreCase) >= 0)
+                            {
+                                matched = true;
+                                int idx = scl.IndexOf(query, StringComparison.OrdinalIgnoreCase);
+                                int start = Math.Max(0, idx - 40);
+                                int len = Math.Min(scl.Length - start, 100);
+                                matchSnippet = scl.Substring(start, len).Replace("\r", " ").Replace("\n", " ");
+                            }
+                        }
+                        catch { }
+                    }
+                }
+
+                if (matched)
+                {
+                    var item = new Dictionary<string, object>
+                    {
+                        { "name", name },
+                        { "type", type },
+                        { "path", path },
+                        { "number", number }
+                    };
+                    if (!string.IsNullOrEmpty(matchSnippet)) item["codeMatchSnippet"] = matchSnippet;
+                    results.Add(item);
+                }
+            }
+
+            return new Dictionary<string, object>
+            {
+                { "totalMatched", results.Count },
+                { "query", query },
+                { "typeFilter", typeFilter },
+                { "groupFilter", groupFilter },
+                { "results", results }
+            };
+        }
+
+        private static Dictionary<string, object> DoSearchTags(Dictionary<string, object> args)
+        {
+            EnsureConnected();
+            string deviceName = args != null && args.ContainsKey("deviceName") ? args["deviceName"] as string : null;
+            string query = args != null && args.ContainsKey("query") ? (args["query"] as string ?? "").Trim() : "";
+            string tableName = args != null && args.ContainsKey("tableName") ? (args["tableName"] as string ?? "").Trim() : "";
+
+            Device dev = FindDevice(deviceName);
+            var plc = FindPlcSoftware(dev);
+
+            var tables = new List<Dictionary<string, object>>();
+            CollectTagsRecursive(plc.TagTableGroup, tables, "");
+
+            var results = new List<Dictionary<string, object>>();
+            foreach (var tblInfo in tables)
+            {
+                string tPath = tblInfo["path"].ToString();
+                string tName = tblInfo.ContainsKey("tableName") && tblInfo["tableName"] != null ? tblInfo["tableName"].ToString() : (tblInfo.ContainsKey("name") ? tblInfo["name"].ToString() : tPath);
+
+                if (!string.IsNullOrEmpty(tableName) && tName.IndexOf(tableName, StringComparison.OrdinalIgnoreCase) < 0 && tPath.IndexOf(tableName, StringComparison.OrdinalIgnoreCase) < 0)
+                {
+                    continue;
+                }
+
+                var table = FindTagTableByPath(plc.TagTableGroup, tPath);
+                if (table == null) continue;
+
+                foreach (PlcTag tag in table.Tags)
+                {
+                    string cText = "";
+                    if (tag.Comment != null && tag.Comment.Items != null && tag.Comment.Items.Count > 0)
+                    {
+                        cText = tag.Comment.Items[0].Text;
+                    }
+
+                    bool matched = string.IsNullOrEmpty(query) ||
+                                   tag.Name.IndexOf(query, StringComparison.OrdinalIgnoreCase) >= 0 ||
+                                   tag.LogicalAddress.IndexOf(query, StringComparison.OrdinalIgnoreCase) >= 0 ||
+                                   tag.DataTypeName.IndexOf(query, StringComparison.OrdinalIgnoreCase) >= 0 ||
+                                   (!string.IsNullOrEmpty(cText) && cText.IndexOf(query, StringComparison.OrdinalIgnoreCase) >= 0);
+
+                    if (matched)
+                    {
+                        results.Add(new Dictionary<string, object>
+                        {
+                            { "table", tName },
+                            { "tableGroup", tPath },
+                            { "name", tag.Name },
+                            { "dataType", tag.DataTypeName },
+                            { "address", tag.LogicalAddress },
+                            { "comment", cText }
+                        });
+                    }
+                }
+            }
+
+            return new Dictionary<string, object>
+            {
+                { "totalMatched", results.Count },
+                { "query", query },
+                { "tableName", tableName },
+                { "results", results }
+            };
+        }
+
+        private static Dictionary<string, object> DoCreateBlock(Dictionary<string, object> args)
+        {
+            EnsureConnected();
+            string deviceName = args != null && args.ContainsKey("deviceName") ? args["deviceName"] as string : null;
+            string blockType = args != null && args.ContainsKey("blockType") ? (args["blockType"] as string ?? "").Trim().ToUpper() : "FC";
+            string blockName = args != null && args.ContainsKey("blockName") ? (args["blockName"] as string ?? "").Trim() : "";
+            string code = args != null && args.ContainsKey("code") ? (args["code"] as string ?? "") : "";
+            string groupPath = args != null && args.ContainsKey("groupPath") ? (args["groupPath"] as string ?? "").Trim() : "";
+
+            if (string.IsNullOrEmpty(blockName)) throw new ArgumentException("blockName is required.");
+            if (string.IsNullOrEmpty(code)) throw new ArgumentException("code is required.");
+
+            Device dev = FindDevice(deviceName);
+            var plc = FindPlcSoftware(dev);
+
+            var sb = new StringBuilder();
+            if (blockType == "FC")
+            {
+                if (!code.Contains("FUNCTION"))
+                {
+                    sb.AppendLine("FUNCTION \"" + blockName + "\" : Void");
+                    sb.AppendLine("{ S7_Optimized_Access := 'TRUE' }");
+                    sb.AppendLine("VERSION : 0.1");
+                    sb.AppendLine("BEGIN");
+                    sb.AppendLine(code);
+                    sb.AppendLine("END_FUNCTION");
+                }
+                else sb.Append(code);
+            }
+            else if (blockType == "FB")
+            {
+                if (!code.Contains("FUNCTION_BLOCK"))
+                {
+                    sb.AppendLine("FUNCTION_BLOCK \"" + blockName + "\"");
+                    sb.AppendLine("{ S7_Optimized_Access := 'TRUE' }");
+                    sb.AppendLine("VERSION : 0.1");
+                    sb.AppendLine("   VAR");
+                    sb.AppendLine("   END_VAR");
+                    sb.AppendLine("BEGIN");
+                    sb.AppendLine(code);
+                    sb.AppendLine("END_FUNCTION_BLOCK");
+                }
+                else sb.Append(code);
+            }
+            else if (blockType == "DB")
+            {
+                if (!code.Contains("DATA_BLOCK"))
+                {
+                    sb.AppendLine("DATA_BLOCK \"" + blockName + "\"");
+                    sb.AppendLine("{ S7_Optimized_Access := 'TRUE' }");
+                    sb.AppendLine("VERSION : 0.1");
+                    sb.AppendLine(code);
+                    sb.AppendLine("BEGIN");
+                    sb.AppendLine("END_DATA_BLOCK");
+                }
+                else sb.Append(code);
+            }
+            else if (blockType == "UDT")
+            {
+                if (!code.Contains("TYPE"))
+                {
+                    sb.AppendLine("TYPE \"" + blockName + "\"");
+                    sb.AppendLine("VERSION : 0.1");
+                    sb.AppendLine("STRUCT");
+                    sb.AppendLine(code);
+                    sb.AppendLine("END_STRUCT;");
+                    sb.AppendLine("END_TYPE");
+                }
+                else sb.Append(code);
+            }
+            else
+            {
+                sb.Append(code);
+            }
+
+            string tempFile = Path.Combine(Path.GetTempPath(), "tia_src_" + Guid.NewGuid().ToString("N") + ".scl");
+            File.WriteAllText(tempFile, sb.ToString(), new UTF8Encoding(true));
+
+            PlcExternalSource extSource = null;
+            try
+            {
+                string srcName = "AgentSrc_" + blockName + "_" + DateTime.Now.ToString("HHmmss");
+                extSource = plc.ExternalSourceGroup.ExternalSources.CreateFromFile(srcName, tempFile);
+
+                if (blockType == "UDT")
+                {
+                    if (string.IsNullOrEmpty(groupPath))
+                    {
+                        extSource.GenerateBlocksFromSource(GenerateBlockOption.None);
+                    }
+                    else
+                    {
+                        var targetTypeGroup = GetOrCreateTypeGroup(plc.TypeGroup, groupPath);
+                        var userGrp = targetTypeGroup as PlcTypeUserGroup;
+                        if (userGrp != null) extSource.GenerateBlocksFromSource(userGrp, GenerateBlockOption.None);
+                        else extSource.GenerateBlocksFromSource(GenerateBlockOption.None);
+                    }
+                }
+                else
+                {
+                    if (string.IsNullOrEmpty(groupPath))
+                    {
+                        extSource.GenerateBlocksFromSource(GenerateBlockOption.None);
+                    }
+                    else
+                    {
+                        var targetBlockGroup = GetOrCreateBlockGroup(plc.BlockGroup, groupPath);
+                        var userGrp = targetBlockGroup as PlcBlockUserGroup;
+                        if (userGrp != null) extSource.GenerateBlocksFromSource(userGrp, GenerateBlockOption.None);
+                        else extSource.GenerateBlocksFromSource(GenerateBlockOption.None);
+                    }
+                }
+
+                return new Dictionary<string, object>
+                {
+                    { "status", "Success" },
+                    { "message", "Block '" + blockName + "' successfully created and compiled." },
+                    { "blockName", blockName },
+                    { "blockType", blockType },
+                    { "group", groupPath }
+                };
+            }
+            catch (Exception ex)
+            {
+                string err = ex.Message;
+                if (ex.InnerException != null) err += " -> " + ex.InnerException.Message;
+                return new Dictionary<string, object>
+                {
+                    { "status", "CompilerError" },
+                    { "error", err },
+                    { "blockName", blockName },
+                    { "blockType", blockType },
+                    { "submittedCode", sb.ToString() }
+                };
+            }
+            finally
+            {
+                if (extSource != null) try { extSource.Delete(); } catch { }
+                if (File.Exists(tempFile)) try { File.Delete(tempFile); } catch { }
+            }
+        }
+
+        private static Dictionary<string, object> DoDeleteBlock(Dictionary<string, object> args)
+        {
+            EnsureConnected();
+            string deviceName = args != null && args.ContainsKey("deviceName") ? args["deviceName"] as string : null;
+            string blockPath = args != null && args.ContainsKey("blockPath") ? args["blockPath"] as string : "";
+            if (string.IsNullOrEmpty(blockPath)) throw new ArgumentException("blockPath is required.");
+
+            Device dev = FindDevice(deviceName);
+            var plc = FindPlcSoftware(dev);
+
+            var blk = FindBlockByPath(plc.BlockGroup, blockPath);
+            if (blk != null)
+            {
+                string bName = blk.Name;
+                blk.Delete();
+                return new Dictionary<string, object>
+                {
+                    { "status", "Success" },
+                    { "message", "Block '" + bName + "' successfully deleted." },
+                    { "blockName", bName }
+                };
+            }
+
+            var udt = FindTypeByPath(plc.TypeGroup, blockPath);
+            if (udt != null)
+            {
+                string uName = udt.Name;
+                udt.Delete();
+                return new Dictionary<string, object>
+                {
+                    { "status", "Success" },
+                    { "message", "UDT '" + uName + "' successfully deleted." },
+                    { "udtName", uName }
+                };
+            }
+
+            return new Dictionary<string, object>
+            {
+                { "status", "NotFound" },
+                { "message", "Block or UDT '" + blockPath + "' not found." }
+            };
+        }
+
+        private static Dictionary<string, object> DoCopyBlock(Dictionary<string, object> args)
+        {
+            EnsureConnected();
+            string targetDeviceName = args != null && args.ContainsKey("targetDeviceName") ? args["targetDeviceName"] as string : null;
+            string sourceBlockPath = args != null && args.ContainsKey("sourceBlockPath") ? args["sourceBlockPath"] as string : "";
+            string targetGroupPath = args != null && args.ContainsKey("targetGroupPath") ? args["targetGroupPath"] as string : "";
+            string sourceProjectPath = args != null && args.ContainsKey("sourceProjectPath") ? args["sourceProjectPath"] as string : null;
+            int sourcePid = args != null && args.ContainsKey("sourcePid") ? Convert.ToInt32(args["sourcePid"]) : 0;
+            bool isUdt = args != null && args.ContainsKey("isUdt") && Convert.ToBoolean(args["isUdt"]);
+
+            if (string.IsNullOrEmpty(sourceBlockPath)) throw new ArgumentException("sourceBlockPath is required.");
+
+            Device targetDev = FindDevice(targetDeviceName);
+            var targetPlc = FindPlcSoftware(targetDev);
+
+            TiaPortal sourceTia = null;
+            Project sourceProj = null;
+            bool mustDisposeSource = false;
+
+            try
+            {
+                if (sourcePid > 0)
+                {
+                    var p = TiaPortal.GetProcesses().FirstOrDefault(pr => pr.Id == sourcePid);
+                    if (p == null) throw new InvalidOperationException("Source TIA Portal PID " + sourcePid + " not found.");
+                    sourceTia = p.Attach();
+                    sourceProj = sourceTia.Projects.FirstOrDefault();
+                    if (sourceProj == null) throw new InvalidOperationException("No open project in TIA process " + sourcePid);
+                }
+                else if (!string.IsNullOrEmpty(sourceProjectPath))
+                {
+                    foreach (var proc in TiaPortal.GetProcesses())
+                    {
+                        try
+                        {
+                            if (proc.ProjectPath != null && proc.ProjectPath.FullName.Equals(sourceProjectPath, StringComparison.OrdinalIgnoreCase))
+                            {
+                                sourceTia = proc.Attach();
+                                sourceProj = sourceTia.Projects.FirstOrDefault();
+                                break;
+                            }
+                        }
+                        catch { }
+                    }
+
+                    if (sourceProj == null)
+                    {
+                        sourceTia = new TiaPortal(TiaPortalMode.WithoutUserInterface);
+                        mustDisposeSource = true;
+                        sourceProj = sourceTia.Projects.Open(new FileInfo(sourceProjectPath));
+                    }
+                }
+                else
+                {
+                    sourceProj = _activeProject;
+                }
+
+                var sourcePlc = FindPlcSoftware(FindDevice(null));
+                if (sourceProj != _activeProject)
+                {
+                    Device sDev = sourceProj.Devices.FirstOrDefault(d => FindPlcSoftware(d) != null);
+                    if (sDev == null) throw new InvalidOperationException("No PLC device found in source project.");
+                    sourcePlc = FindPlcSoftware(sDev);
+                }
+
+                string tempXml = Path.Combine(Path.GetTempPath(), "tia_copy_" + Guid.NewGuid().ToString("N") + ".xml");
+                try
+                {
+                    if (!isUdt)
+                    {
+                        var checkUdt = FindTypeByPath(sourcePlc.TypeGroup, sourceBlockPath);
+                        var checkBlk = FindBlockByPath(sourcePlc.BlockGroup, sourceBlockPath);
+                        if (checkUdt != null && checkBlk == null) isUdt = true;
+                    }
+
+                    if (isUdt)
+                    {
+                        var srcUdt = FindTypeByPath(sourcePlc.TypeGroup, sourceBlockPath);
+                        if (srcUdt == null) throw new InvalidOperationException("UDT not found in source project: " + sourceBlockPath);
+                        srcUdt.Export(new FileInfo(tempXml), ExportOptions.WithDefaults);
+
+                        var targetTypeGroup = string.IsNullOrEmpty(targetGroupPath) ? targetPlc.TypeGroup : GetOrCreateTypeGroup(targetPlc.TypeGroup, targetGroupPath);
+                        targetTypeGroup.Types.Import(new FileInfo(tempXml), ImportOptions.Override);
+                    }
+                    else
+                    {
+                        var srcBlk = FindBlockByPath(sourcePlc.BlockGroup, sourceBlockPath);
+                        if (srcBlk == null) throw new InvalidOperationException("Block not found in source project: " + sourceBlockPath);
+
+                        try
+                        {
+                            srcBlk.Export(new FileInfo(tempXml), ExportOptions.WithDefaults);
+                        }
+                        catch (Exception ex)
+                        {
+                            if (ex.Message.IndexOf("Inconsistent", StringComparison.OrdinalIgnoreCase) >= 0)
+                            {
+                                var comp = sourcePlc.GetService<ICompilable>();
+                                if (comp != null) comp.Compile();
+                                srcBlk.Export(new FileInfo(tempXml), ExportOptions.WithDefaults);
+                            }
+                            else throw;
+                        }
+
+                        // Auto-copy any referenced UDTs if present
+                        try
+                        {
+                            var docCheck = new XmlDocument();
+                            docCheck.Load(tempXml);
+                            var memberNodes = docCheck.SelectNodes("//*[local-name()='Member'][@Datatype]");
+                            if (memberNodes != null)
+                            {
+                                foreach (XmlNode mNode in memberNodes)
+                                {
+                                    string rawDt = mNode.Attributes["Datatype"].Value;
+                                    if (rawDt.StartsWith("\"") && rawDt.EndsWith("\""))
+                                    {
+                                        string udtName = rawDt.Trim('"');
+                                        var srcDepUdt = FindTypeByPath(sourcePlc.TypeGroup, udtName);
+                                        if (srcDepUdt != null)
+                                        {
+                                            var tgtDepUdt = FindTypeByPath(targetPlc.TypeGroup, udtName);
+                                            if (tgtDepUdt == null)
+                                            {
+                                                string udtTemp = Path.Combine(Path.GetTempPath(), "tia_udt_dep_" + Guid.NewGuid().ToString("N") + ".xml");
+                                                try
+                                                {
+                                                    srcDepUdt.Export(new FileInfo(udtTemp), ExportOptions.WithDefaults);
+                                                    targetPlc.TypeGroup.Types.Import(new FileInfo(udtTemp), ImportOptions.Override);
+                                                    Log("Auto-copied referenced UDT: " + udtName);
+                                                }
+                                                finally
+                                                {
+                                                    if (File.Exists(udtTemp)) try { File.Delete(udtTemp); } catch { }
+                                                }
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                        catch { }
+
+                        var targetBlockGroup = string.IsNullOrEmpty(targetGroupPath) ? targetPlc.BlockGroup : GetOrCreateBlockGroup(targetPlc.BlockGroup, targetGroupPath);
+                        targetBlockGroup.Blocks.Import(new FileInfo(tempXml), ImportOptions.Override);
+                    }
+
+                    return new Dictionary<string, object>
+                    {
+                        { "status", "Success" },
+                        { "message", "Block '" + sourceBlockPath + "' successfully copied to target group '" + targetGroupPath + "'." },
+                        { "sourceBlock", sourceBlockPath },
+                        { "targetGroup", targetGroupPath }
+                    };
+                }
+                finally
+                {
+                    if (File.Exists(tempXml)) try { File.Delete(tempXml); } catch { }
+                }
+            }
+            finally
+            {
+                if (mustDisposeSource && sourceTia != null)
+                {
+                    try { sourceTia.Dispose(); } catch { }
+                }
+            }
+        }
+        private static void AppendParameterValueNode(XmlElement pNode, XmlDocument doc, string val, string stNs, ref int maxUId)
+        {
+            if (string.IsNullOrWhiteSpace(val)) return;
+            val = val.Trim();
+
+            if (val.StartsWith("#"))
+            {
+                XmlElement acc = doc.CreateElement("Access", stNs);
+                acc.SetAttribute("Scope", "LocalVariable");
+                acc.SetAttribute("UId", (++maxUId).ToString());
+
+                XmlElement sym = doc.CreateElement("Symbol", stNs);
+                sym.SetAttribute("UId", (++maxUId).ToString());
+
+                string varName = val.TrimStart('#');
+                var parts = varName.Split('.');
+                for (int i = 0; i < parts.Length; i++)
+                {
+                    if (i > 0)
+                    {
+                        XmlElement tokDot = doc.CreateElement("Token", stNs);
+                        tokDot.SetAttribute("Text", ".");
+                        tokDot.SetAttribute("UId", (++maxUId).ToString());
+                        sym.AppendChild(tokDot);
+                    }
+                    XmlElement comp = doc.CreateElement("Component", stNs);
+                    comp.SetAttribute("Name", parts[i].Trim('\"'));
+                    comp.SetAttribute("UId", (++maxUId).ToString());
+                    sym.AppendChild(comp);
+                }
+                acc.AppendChild(sym);
+                pNode.AppendChild(acc);
+            }
+            else if (val.StartsWith("\"") || val.Contains("."))
+            {
+                XmlElement acc = doc.CreateElement("Access", stNs);
+                acc.SetAttribute("Scope", "GlobalVariable");
+                acc.SetAttribute("UId", (++maxUId).ToString());
+
+                XmlElement sym = doc.CreateElement("Symbol", stNs);
+                sym.SetAttribute("UId", (++maxUId).ToString());
+
+                var parts = val.Split('.');
+                for (int i = 0; i < parts.Length; i++)
+                {
+                    if (i > 0)
+                    {
+                        XmlElement tokDot = doc.CreateElement("Token", stNs);
+                        tokDot.SetAttribute("Text", ".");
+                        tokDot.SetAttribute("UId", (++maxUId).ToString());
+                        sym.AppendChild(tokDot);
+                    }
+                    XmlElement comp = doc.CreateElement("Component", stNs);
+                    comp.SetAttribute("Name", parts[i].Trim('\"'));
+                    comp.SetAttribute("UId", (++maxUId).ToString());
+                    XmlElement hasQuotes = doc.CreateElement("BooleanAttribute", stNs);
+                    hasQuotes.SetAttribute("Name", "HasQuotes");
+                    hasQuotes.SetAttribute("UId", (++maxUId).ToString());
+                    hasQuotes.InnerText = "true";
+                    comp.AppendChild(hasQuotes);
+                    sym.AppendChild(comp);
+                }
+                acc.AppendChild(sym);
+                pNode.AppendChild(acc);
+            }
+            else
+            {
+                XmlElement tokVal = doc.CreateElement("Token", stNs);
+                tokVal.SetAttribute("Text", val);
+                tokVal.SetAttribute("UId", (++maxUId).ToString());
+                pNode.AppendChild(tokVal);
+            }
+        }
+
+        private static void BuildCallStructuredText(XmlElement st, XmlDocument doc, string callType, string instanceName, string calleeName, Dictionary<string, object> parameters, ref int maxUId)
+        {
+            string stNs = "http://www.siemens.com/automation/Openness/SW/NetworkSource/StructuredText/v3";
+
+            if (callType == "multi")
+            {
+                XmlElement acc = doc.CreateElement("Access", stNs);
+                acc.SetAttribute("Scope", "LocalVariable");
+                acc.SetAttribute("UId", (++maxUId).ToString());
+
+                XmlElement sym = doc.CreateElement("Symbol", stNs);
+                sym.SetAttribute("UId", (++maxUId).ToString());
+
+                XmlElement comp = doc.CreateElement("Component", stNs);
+                comp.SetAttribute("Name", instanceName);
+                comp.SetAttribute("UId", (++maxUId).ToString());
+                sym.AppendChild(comp);
+                acc.AppendChild(sym);
+                st.AppendChild(acc);
+
+                XmlElement accCall = doc.CreateElement("Access", stNs);
+                accCall.SetAttribute("Scope", "Call");
+                accCall.SetAttribute("UId", (++maxUId).ToString());
+
+                XmlElement instr = doc.CreateElement("Instruction", stNs);
+                instr.SetAttribute("UId", (++maxUId).ToString());
+
+                XmlElement tokOpen = doc.CreateElement("Token", stNs);
+                tokOpen.SetAttribute("Text", "(");
+                tokOpen.SetAttribute("UId", (++maxUId).ToString());
+                instr.AppendChild(tokOpen);
+
+                if (parameters != null && parameters.Count > 0)
+                {
+                    int pIdx = 0;
+                    foreach (var kv in parameters)
+                    {
+                        pIdx++;
+                        XmlElement pNode = doc.CreateElement("Parameter", stNs);
+                        pNode.SetAttribute("Name", kv.Key);
+                        pNode.SetAttribute("UId", (++maxUId).ToString());
+
+                        XmlElement bl1 = doc.CreateElement("Blank", stNs);
+                        bl1.SetAttribute("Num", "1");
+                        bl1.SetAttribute("UId", (++maxUId).ToString());
+                        pNode.AppendChild(bl1);
+
+                        XmlElement tokAssign = doc.CreateElement("Token", stNs);
+                        tokAssign.SetAttribute("Text", ":=");
+                        tokAssign.SetAttribute("UId", (++maxUId).ToString());
+                        pNode.AppendChild(tokAssign);
+
+                        XmlElement bl2 = doc.CreateElement("Blank", stNs);
+                        bl2.SetAttribute("Num", "1");
+                        bl2.SetAttribute("UId", (++maxUId).ToString());
+                        pNode.AppendChild(bl2);
+
+                        AppendParameterValueNode(pNode, doc, kv.Value != null ? kv.Value.ToString() : "", stNs, ref maxUId);
+
+                        instr.AppendChild(pNode);
+
+                        if (pIdx < parameters.Count)
+                        {
+                            XmlElement tokComma = doc.CreateElement("Token", stNs);
+                            tokComma.SetAttribute("Text", ",");
+                            tokComma.SetAttribute("UId", (++maxUId).ToString());
+                            instr.AppendChild(tokComma);
+                        }
+                    }
+                }
+
+                XmlElement tokClose = doc.CreateElement("Token", stNs);
+                tokClose.SetAttribute("Text", ")");
+                tokClose.SetAttribute("UId", (++maxUId).ToString());
+                instr.AppendChild(tokClose);
+
+                accCall.AppendChild(instr);
+                st.AppendChild(accCall);
+
+                XmlElement tokSemi = doc.CreateElement("Token", stNs);
+                tokSemi.SetAttribute("Text", ";");
+                tokSemi.SetAttribute("UId", (++maxUId).ToString());
+                st.AppendChild(tokSemi);
+            }
+            else if (callType == "single")
+            {
+                XmlElement acc = doc.CreateElement("Access", stNs);
+                acc.SetAttribute("Scope", "GlobalVariable");
+                acc.SetAttribute("UId", (++maxUId).ToString());
+
+                XmlElement sym = doc.CreateElement("Symbol", stNs);
+                sym.SetAttribute("UId", (++maxUId).ToString());
+
+                XmlElement comp = doc.CreateElement("Component", stNs);
+                comp.SetAttribute("Name", instanceName);
+                comp.SetAttribute("UId", (++maxUId).ToString());
+
+                XmlElement hasQuotes = doc.CreateElement("BooleanAttribute", stNs);
+                hasQuotes.SetAttribute("Name", "HasQuotes");
+                hasQuotes.SetAttribute("UId", (++maxUId).ToString());
+                hasQuotes.InnerText = "true";
+                comp.AppendChild(hasQuotes);
+
+                sym.AppendChild(comp);
+                acc.AppendChild(sym);
+                st.AppendChild(acc);
+
+                XmlElement accCall = doc.CreateElement("Access", stNs);
+                accCall.SetAttribute("Scope", "Call");
+                accCall.SetAttribute("UId", (++maxUId).ToString());
+
+                XmlElement instr = doc.CreateElement("Instruction", stNs);
+                instr.SetAttribute("UId", (++maxUId).ToString());
+
+                XmlElement tokOpen = doc.CreateElement("Token", stNs);
+                tokOpen.SetAttribute("Text", "(");
+                tokOpen.SetAttribute("UId", (++maxUId).ToString());
+                instr.AppendChild(tokOpen);
+
+                if (parameters != null && parameters.Count > 0)
+                {
+                    int pIdx = 0;
+                    foreach (var kv in parameters)
+                    {
+                        pIdx++;
+                        XmlElement pNode = doc.CreateElement("Parameter", stNs);
+                        pNode.SetAttribute("Name", kv.Key);
+                        pNode.SetAttribute("UId", (++maxUId).ToString());
+
+                        XmlElement bl1 = doc.CreateElement("Blank", stNs);
+                        bl1.SetAttribute("Num", "1");
+                        bl1.SetAttribute("UId", (++maxUId).ToString());
+                        pNode.AppendChild(bl1);
+
+                        XmlElement tokAssign = doc.CreateElement("Token", stNs);
+                        tokAssign.SetAttribute("Text", ":=");
+                        tokAssign.SetAttribute("UId", (++maxUId).ToString());
+                        pNode.AppendChild(tokAssign);
+
+                        XmlElement bl2 = doc.CreateElement("Blank", stNs);
+                        bl2.SetAttribute("Num", "1");
+                        bl2.SetAttribute("UId", (++maxUId).ToString());
+                        pNode.AppendChild(bl2);
+
+                        AppendParameterValueNode(pNode, doc, kv.Value != null ? kv.Value.ToString() : "", stNs, ref maxUId);
+
+                        instr.AppendChild(pNode);
+
+                        if (pIdx < parameters.Count)
+                        {
+                            XmlElement tokComma = doc.CreateElement("Token", stNs);
+                            tokComma.SetAttribute("Text", ",");
+                            tokComma.SetAttribute("UId", (++maxUId).ToString());
+                            instr.AppendChild(tokComma);
+                        }
+                    }
+                }
+
+                XmlElement tokClose = doc.CreateElement("Token", stNs);
+                tokClose.SetAttribute("Text", ")");
+                tokClose.SetAttribute("UId", (++maxUId).ToString());
+                instr.AppendChild(tokClose);
+
+                accCall.AppendChild(instr);
+                st.AppendChild(accCall);
+
+                XmlElement tokSemi = doc.CreateElement("Token", stNs);
+                tokSemi.SetAttribute("Text", ";");
+                tokSemi.SetAttribute("UId", (++maxUId).ToString());
+                st.AppendChild(tokSemi);
+            }
+            else // direct FC call
+            {
+                XmlElement accCall = doc.CreateElement("Access", stNs);
+                accCall.SetAttribute("Scope", "Call");
+                accCall.SetAttribute("UId", (++maxUId).ToString());
+
+                XmlElement callInfo = doc.CreateElement("CallInfo", stNs);
+                callInfo.SetAttribute("Name", calleeName);
+                callInfo.SetAttribute("BlockType", "FC");
+                callInfo.SetAttribute("UId", (++maxUId).ToString());
+
+                XmlElement tokOpen = doc.CreateElement("Token", stNs);
+                tokOpen.SetAttribute("Text", "(");
+                tokOpen.SetAttribute("UId", (++maxUId).ToString());
+                callInfo.AppendChild(tokOpen);
+
+                if (parameters != null && parameters.Count > 0)
+                {
+                    int pIdx = 0;
+                    foreach (var kv in parameters)
+                    {
+                        pIdx++;
+                        XmlElement pNode = doc.CreateElement("Parameter", stNs);
+                        pNode.SetAttribute("Name", kv.Key);
+                        pNode.SetAttribute("UId", (++maxUId).ToString());
+
+                        XmlElement bl1 = doc.CreateElement("Blank", stNs);
+                        bl1.SetAttribute("Num", "1");
+                        bl1.SetAttribute("UId", (++maxUId).ToString());
+                        pNode.AppendChild(bl1);
+
+                        XmlElement tokAssign = doc.CreateElement("Token", stNs);
+                        tokAssign.SetAttribute("Text", ":=");
+                        tokAssign.SetAttribute("UId", (++maxUId).ToString());
+                        pNode.AppendChild(tokAssign);
+
+                        XmlElement bl2 = doc.CreateElement("Blank", stNs);
+                        bl2.SetAttribute("Num", "1");
+                        bl2.SetAttribute("UId", (++maxUId).ToString());
+                        pNode.AppendChild(bl2);
+
+                        AppendParameterValueNode(pNode, doc, kv.Value != null ? kv.Value.ToString() : "", stNs, ref maxUId);
+
+                        callInfo.AppendChild(pNode);
+
+                        if (pIdx < parameters.Count)
+                        {
+                            XmlElement tokComma = doc.CreateElement("Token", stNs);
+                            tokComma.SetAttribute("Text", ",");
+                            tokComma.SetAttribute("UId", (++maxUId).ToString());
+                            callInfo.AppendChild(tokComma);
+                        }
+                    }
+                }
+
+                XmlElement tokClose = doc.CreateElement("Token", stNs);
+                tokClose.SetAttribute("Text", ")");
+                tokClose.SetAttribute("UId", (++maxUId).ToString());
+                callInfo.AppendChild(tokClose);
+
+                accCall.AppendChild(callInfo);
+                st.AppendChild(accCall);
+
+                XmlElement tokSemi = doc.CreateElement("Token", stNs);
+                tokSemi.SetAttribute("Text", ";");
+                tokSemi.SetAttribute("UId", (++maxUId).ToString());
+                st.AppendChild(tokSemi);
+            }
+        }
+
+        private static Dictionary<string, object> DoCallBlock(Dictionary<string, object> args)
+        {
+            EnsureConnected();
+            string callerName = null;
+            if (args != null)
+            {
+                if (args.ContainsKey("callerBlockName") && args["callerBlockName"] != null) callerName = args["callerBlockName"].ToString().Trim();
+                else if (args.ContainsKey("callerBlock") && args["callerBlock"] != null) callerName = args["callerBlock"].ToString().Trim();
+                else if (args.ContainsKey("caller") && args["caller"] != null) callerName = args["caller"].ToString().Trim();
+            }
+
+            string calleeName = null;
+            if (args != null)
+            {
+                if (args.ContainsKey("calleeBlockName") && args["calleeBlockName"] != null) calleeName = args["calleeBlockName"].ToString().Trim();
+                else if (args.ContainsKey("calleeBlock") && args["calleeBlock"] != null) calleeName = args["calleeBlock"].ToString().Trim();
+                else if (args.ContainsKey("callee") && args["callee"] != null) calleeName = args["callee"].ToString().Trim();
+            }
+
+            if (string.IsNullOrEmpty(callerName) || string.IsNullOrEmpty(calleeName))
+            {
+                throw new ArgumentException("Both 'callerBlockName' and 'calleeBlockName' (or 'callerBlock'/'calleeBlock') are required.");
+            }
+
+            string instanceName = args.ContainsKey("instanceName") && args["instanceName"] != null ? args["instanceName"].ToString().Trim() : "";
+            string callType = args.ContainsKey("callType") && args["callType"] != null ? args["callType"].ToString().Trim().ToLowerInvariant() : "auto";
+            if (args.ContainsKey("instanceDbName") && args["instanceDbName"] != null && !string.IsNullOrEmpty(args["instanceDbName"].ToString().Trim()))
+            {
+                instanceName = args["instanceDbName"].ToString().Trim();
+                callType = "single";
+            }
+            string netTitle = args.ContainsKey("networkTitle") && args["networkTitle"] != null ? args["networkTitle"].ToString().Trim() : "";
+            string deviceName = args.ContainsKey("deviceName") && args["deviceName"] != null ? args["deviceName"].ToString() : null;
+
+            Dictionary<string, object> parameters = null;
+            if (args.ContainsKey("parameters") && args["parameters"] != null)
+            {
+                if (args["parameters"] is Dictionary<string, object>)
+                {
+                    parameters = (Dictionary<string, object>)args["parameters"];
+                }
+                else if (args["parameters"] is string)
+                {
+                    string paramStr = (string)args["parameters"];
+                    if (!string.IsNullOrWhiteSpace(paramStr))
+                    {
+                        parameters = new Dictionary<string, object>();
+                        var parts = paramStr.Split(new[] { ',' }, StringSplitOptions.RemoveEmptyEntries);
+                        foreach (var p in parts)
+                        {
+                            var kv = p.Split(new[] { ":=" }, StringSplitOptions.None);
+                            if (kv.Length == 2)
+                            {
+                                parameters[kv[0].Trim()] = kv[1].Trim();
+                            }
+                        }
+                    }
+                }
+            }
+
+            var dev = FindDevice(deviceName);
+            var plc = FindPlcSoftware(dev);
+
+            var callerBlock = FindBlockByPath(plc.BlockGroup, callerName);
+            if (callerBlock == null) throw new InvalidOperationException("Caller block not found: " + callerName);
+
+            var calleeBlock = FindBlockByPath(plc.BlockGroup, calleeName);
+
+            // Determine caller type
+            string callerType = callerBlock.GetType().Name;
+            bool callerIsFb = callerType.IndexOf("FB", StringComparison.OrdinalIgnoreCase) >= 0 || callerType.IndexOf("FunctionBlock", StringComparison.OrdinalIgnoreCase) >= 0;
+            bool callerIsFc = callerType.IndexOf("FC", StringComparison.OrdinalIgnoreCase) >= 0 || (callerType.IndexOf("Function", StringComparison.OrdinalIgnoreCase) >= 0 && !callerIsFb);
+            bool callerIsOb = callerType.IndexOf("OB", StringComparison.OrdinalIgnoreCase) >= 0 || callerType.IndexOf("OrganizationBlock", StringComparison.OrdinalIgnoreCase) >= 0;
+
+            // Determine callee type
+            string calleeType = calleeBlock != null ? calleeBlock.GetType().Name : "";
+            bool calleeIsFb = calleeType.IndexOf("FB", StringComparison.OrdinalIgnoreCase) >= 0 || calleeType.IndexOf("FunctionBlock", StringComparison.OrdinalIgnoreCase) >= 0 || calleeName.EndsWith("_FB", StringComparison.OrdinalIgnoreCase);
+            bool calleeIsFc = calleeType.IndexOf("FC", StringComparison.OrdinalIgnoreCase) >= 0 || calleeType.IndexOf("Function", StringComparison.OrdinalIgnoreCase) >= 0 || calleeName.EndsWith("_FC", StringComparison.OrdinalIgnoreCase);
+
+            if (!calleeIsFb && !calleeIsFc)
+            {
+                if (calleeName.EndsWith("_FB", StringComparison.OrdinalIgnoreCase)) calleeIsFb = true;
+                else if (calleeName.EndsWith("_FC", StringComparison.OrdinalIgnoreCase)) calleeIsFc = true;
+                else calleeIsFb = true;
+            }
+
+            // Resolve callType
+            if (callType == "auto")
+            {
+                if (calleeIsFc)
+                {
+                    callType = "direct";
+                }
+                else if (callerIsFb)
+                {
+                    callType = "multi";
+                }
+                else
+                {
+                    callType = "single";
+                }
+            }
+
+            // Default instance naming
+            if (string.IsNullOrEmpty(instanceName))
+            {
+                if (callType == "multi")
+                {
+                    instanceName = "inst_" + calleeName;
+                }
+                else if (callType == "single")
+                {
+                    instanceName = "instDB_" + callerName + "_" + calleeName;
+                }
+            }
+
+            // If single-instance FB call, verify or create Instance DB
+            if (callType == "single")
+            {
+                var existingDb = FindBlockByPath(plc.BlockGroup, instanceName);
+                if (existingDb == null)
+                {
+                    Log("Creating dedicated Instance DB '" + instanceName + "' for FB '" + calleeName + "'...");
+                    var blockGroup = callerBlock.Parent as PlcBlockGroup;
+                    if (blockGroup == null) blockGroup = plc.BlockGroup;
+                    blockGroup.Blocks.CreateInstanceDB(instanceName, true, -1, calleeName);
+                }
+            }
+
+            // Export caller block to XML
+            string tempXml = Path.Combine(Path.GetTempPath(), "tia_call_" + Guid.NewGuid().ToString("N") + ".xml");
+            try
+            {
+                callerBlock.Export(new FileInfo(tempXml), ExportOptions.WithDefaults);
+                if (!File.Exists(tempXml)) throw new InvalidOperationException("Failed to export caller block XML.");
+
+                var doc = new XmlDocument();
+                doc.Load(tempXml);
+
+                // Handle multi-instance: declare in caller's Static section
+                if (callType == "multi")
+                {
+                    var staticSec = doc.SelectSingleNode("//*[local-name()='Section'][@Name='Static']");
+                    if (staticSec == null)
+                    {
+                        var ifaceNode = doc.SelectSingleNode("//*[local-name()='Interface']/*[local-name()='Sections']");
+                        if (ifaceNode == null) ifaceNode = doc.SelectSingleNode("//*[local-name()='Interface']");
+                        if (ifaceNode != null)
+                        {
+                            var newSec = doc.CreateElement("Section", ifaceNode.NamespaceURI);
+                            newSec.SetAttribute("Name", "Static");
+                            ifaceNode.AppendChild(newSec);
+                            staticSec = newSec;
+                        }
+                    }
+
+                    if (staticSec != null)
+                    {
+                        var existingMem = staticSec.SelectSingleNode("./*[local-name()='Member'][@Name='" + instanceName + "']");
+                        if (existingMem == null)
+                        {
+                            XmlElement mem = doc.CreateElement("Member", staticSec.NamespaceURI);
+                            mem.SetAttribute("Name", instanceName);
+                            mem.SetAttribute("Datatype", "\"" + calleeName + "\"");
+                            mem.SetAttribute("Accessibility", "Public");
+                            staticSec.AppendChild(mem);
+                        }
+                    }
+                }
+
+                // Build SCL Call statement
+                var callSb = new StringBuilder();
+                if (callType == "multi")
+                {
+                    callSb.Append("#" + instanceName + "(");
+                }
+                else if (callType == "single")
+                {
+                    callSb.Append("\"" + instanceName + "\"(");
+                }
+                else
+                {
+                    callSb.Append("\"" + calleeName + "\"(");
+                }
+
+                if (parameters != null && parameters.Count > 0)
+                {
+                    callSb.AppendLine();
+                    int pIdx = 0;
+                    foreach (var kv in parameters)
+                    {
+                        pIdx++;
+                        string comma = pIdx < parameters.Count ? "," : "";
+                        callSb.AppendLine("    " + kv.Key + " := " + kv.Value + comma);
+                    }
+                    callSb.Append(");");
+                }
+                else
+                {
+                    callSb.Append(");");
+                }
+
+                string callText = callSb.ToString();
+
+                // Inject into XML as a new CompileUnit (Network)
+                var cuNodes = doc.SelectNodes("//*[contains(local-name(), 'CompileUnit')]");
+                if (cuNodes != null && cuNodes.Count > 0)
+                {
+                    var progLangNode = doc.SelectSingleNode("//*[local-name()='AttributeList']/*[local-name()='ProgrammingLanguage']");
+                    string progLangVal = progLangNode != null ? progLangNode.InnerText : "SCL";
+                    bool isSclBlock = progLangVal.Equals("SCL", StringComparison.OrdinalIgnoreCase);
+
+                    if (isSclBlock)
+                    {
+                        // SCL blocks in TIA Portal MUST have exactly ONE CompileUnit.
+                        // Append the call to the existing CompileUnit's StructuredText.
+                        XmlNode lastCu = cuNodes[cuNodes.Count - 1];
+                        var stNode = lastCu.SelectSingleNode(".//*[local-name()='StructuredText']");
+                        if (stNode != null)
+                        {
+                            int maxUId = 500;
+                            var allUIdNodes = doc.SelectNodes("//*[@UId]");
+                            if (allUIdNodes != null)
+                            {
+                                foreach (XmlNode n in allUIdNodes)
+                                {
+                                    int curUId;
+                                    if (n.Attributes != null && n.Attributes["UId"] != null && int.TryParse(n.Attributes["UId"].Value, out curUId))
+                                    {
+                                        if (curUId > maxUId) maxUId = curUId;
+                                    }
+                                }
+                            }
+
+                            string stNs = stNode.NamespaceURI;
+                            XmlElement nl = doc.CreateElement("NewLine", stNs);
+                            nl.SetAttribute("Num", "1");
+                            nl.SetAttribute("UId", (++maxUId).ToString());
+                            stNode.AppendChild(nl);
+
+                            if (!string.IsNullOrEmpty(netTitle))
+                            {
+                                XmlElement comment = doc.CreateElement("LineComment", stNs);
+                                comment.SetAttribute("Inserted", "false");
+                                comment.SetAttribute("NoClosingBracket", "false");
+                                comment.SetAttribute("UId", (++maxUId).ToString());
+                                XmlElement commText = doc.CreateElement("Text", stNs);
+                                commText.SetAttribute("UId", (++maxUId).ToString());
+                                commText.InnerText = " " + netTitle;
+                                comment.AppendChild(commText);
+                                stNode.AppendChild(comment);
+
+                                XmlElement nl2 = doc.CreateElement("NewLine", stNs);
+                                nl2.SetAttribute("Num", "1");
+                                nl2.SetAttribute("UId", (++maxUId).ToString());
+                                stNode.AppendChild(nl2);
+                            }
+
+                            BuildCallStructuredText((XmlElement)stNode, doc, callType, instanceName, calleeName, parameters, ref maxUId);
+                        }
+                    }
+                    else
+                    {
+                        // LAD/FBD block: append a new SCL CompileUnit network
+                        XmlNode lastCu = cuNodes[cuNodes.Count - 1];
+                        XmlElement newCu = (XmlElement)lastCu.CloneNode(true);
+
+                        int maxId = 100;
+                        var allIdNodes = doc.SelectNodes("//*[@ID]");
+                        if (allIdNodes != null)
+                        {
+                            foreach (XmlNode n in allIdNodes)
+                            {
+                                int curId;
+                                if (n.Attributes != null && n.Attributes["ID"] != null && int.TryParse(n.Attributes["ID"].Value, out curId))
+                                {
+                                    if (curId > maxId) maxId = curId;
+                                }
+                            }
+                        }
+
+                        if (newCu.HasAttribute("ID")) newCu.SetAttribute("ID", (++maxId).ToString());
+                        var innerIds = newCu.SelectNodes(".//*[@ID]");
+                        if (innerIds != null)
+                        {
+                            foreach (XmlElement el in innerIds)
+                            {
+                                el.SetAttribute("ID", (++maxId).ToString());
+                            }
+                        }
+
+                        var netSrc = newCu.SelectSingleNode(".//*[local-name()='NetworkSource']");
+                        if (netSrc != null)
+                        {
+                            netSrc.RemoveAll();
+                            string stNs = "http://www.siemens.com/automation/Openness/SW/NetworkSource/StructuredText/v3";
+                            XmlElement st = doc.CreateElement("StructuredText", stNs);
+
+                            int maxUId = 500;
+                            var allUIdNodes = doc.SelectNodes("//*[@UId]");
+                            if (allUIdNodes != null)
+                            {
+                                foreach (XmlNode n in allUIdNodes)
+                                {
+                                    int curUId;
+                                    if (n.Attributes != null && n.Attributes["UId"] != null && int.TryParse(n.Attributes["UId"].Value, out curUId))
+                                    {
+                                        if (curUId > maxUId) maxUId = curUId;
+                                    }
+                                }
+                            }
+
+                            BuildCallStructuredText(st, doc, callType, instanceName, calleeName, parameters, ref maxUId);
+                            netSrc.AppendChild(st);
+                        }
+
+                        var progLang = newCu.SelectSingleNode(".//*[local-name()='ProgrammingLanguage']");
+                        if (progLang != null) progLang.InnerText = "SCL";
+
+                        string netTitleVal = !string.IsNullOrEmpty(netTitle)
+                            ? netTitle
+                            : (callType == "multi" ? "Call " + calleeName + " (Multi-Instance #" + instanceName + ")" : "Call " + calleeName);
+
+                        var titleTexts = newCu.SelectNodes(".//*[local-name()='MultilingualText'][@CompositionName='Title']//*[local-name()='Text']");
+                        if (titleTexts != null && titleTexts.Count > 0)
+                        {
+                            foreach (XmlNode tn in titleTexts) tn.InnerText = netTitleVal;
+                        }
+
+                        var commentTexts = newCu.SelectNodes(".//*[local-name()='MultilingualText'][@CompositionName='Comment']//*[local-name()='Text']");
+                        if (commentTexts != null && commentTexts.Count > 0)
+                        {
+                            foreach (XmlNode cn in commentTexts) cn.InnerText = "";
+                        }
+
+                        lastCu.ParentNode.InsertAfter(newCu, lastCu);
+                    }
+                }
+
+                doc.Save(tempXml);
+                try { File.Copy(tempXml, @"C:\Users\aa.fedin\Favorites\Tia_18_Agent\last_call_block_import.xml", true); } catch { }
+
+                // Re-import modified caller block
+                var targetGroup = callerBlock.Parent as PlcBlockGroup;
+                if (targetGroup == null) targetGroup = plc.BlockGroup;
+                targetGroup.Blocks.Import(new FileInfo(tempXml), ImportOptions.Override);
+
+                // Auto-compile to verify
+                string compileStatus = "Not Compiled";
+                var comp = plc.GetService<ICompilable>();
+                if (comp != null)
+                {
+                    try
+                    {
+                        var cr = comp.Compile();
+                        compileStatus = cr.State.ToString();
+                    }
+                    catch (Exception compEx)
+                    {
+                        compileStatus = "Compile Error: " + compEx.Message;
+                    }
+                }
+
+                return new Dictionary<string, object>
+                {
+                    { "status", "Success" },
+                    { "callerBlock", callerName },
+                    { "calleeBlock", calleeName },
+                    { "callType", callType },
+                    { "instanceName", instanceName },
+                    { "callStatement", callText },
+                    { "compileStatus", compileStatus },
+                    { "message", string.Format("Block '{0}' successfully called in '{1}' as {2} (Instance: {3}). Compile status: {4}",
+                        calleeName, callerName, callType, instanceName, compileStatus) }
+                };
+            }
+            finally
+            {
+                if (File.Exists(tempXml)) try { File.Delete(tempXml); } catch { }
+            }
+        }
+
+        private static Dictionary<string, object> DoGetDeviceParams(Dictionary<string, object> args)
+        {
+            EnsureConnected();
+            string deviceName = args != null && args.ContainsKey("deviceName") ? args["deviceName"] as string : null;
+            Device dev = FindDevice(deviceName);
+            if (dev == null) throw new InvalidOperationException("Device not found: " + deviceName);
+
+            var res = new Dictionary<string, object>();
+            res["deviceName"] = dev.Name;
+            res["typeIdentifier"] = dev.TypeIdentifier;
+
+            string ip = "";
+            string subnet = "";
+            string pnDeviceName = "";
+            var modulesList = new List<Dictionary<string, object>>();
+
+            foreach (DeviceItem di in dev.DeviceItems)
+            {
+                var modInfo = new Dictionary<string, object>
+                {
+                    { "name", di.Name },
+                    { "typeIdentifier", di.TypeIdentifier }
+                };
+                try
+                {
+                    object pos = di.GetAttribute("PositionNumber");
+                    if (pos != null) modInfo["slot"] = pos;
+                }
+                catch { }
+
+                try
+                {
+                    object order = di.GetAttribute("OrderNumber");
+                    if (order != null && !string.IsNullOrEmpty(order.ToString())) modInfo["orderNumber"] = order.ToString();
+                }
+                catch { }
+
+                try
+                {
+                    object fw = di.GetAttribute("FirmwareVersion");
+                    if (fw != null && !string.IsNullOrEmpty(fw.ToString())) modInfo["firmware"] = fw.ToString();
+                }
+                catch { }
+
+                try
+                {
+                    object pn = di.GetAttribute("PnDeviceName");
+                    if (pn != null && !string.IsNullOrEmpty(pn.ToString()))
+                    {
+                        pnDeviceName = pn.ToString();
+                        modInfo["pnDeviceName"] = pnDeviceName;
+                    }
+                }
+                catch { }
+
+                try
+                {
+                    var netIf = di.GetService<Siemens.Engineering.HW.Features.NetworkInterface>();
+                    if (netIf != null && netIf.Nodes != null && netIf.Nodes.Count > 0)
+                    {
+                        var node = netIf.Nodes[0];
+                        try
+                        {
+                            object addr = node.GetAttribute("Address");
+                            if (addr != null && !string.IsNullOrEmpty(addr.ToString())) ip = addr.ToString();
+                        }
+                        catch { }
+                        try
+                        {
+                            object sub = node.GetAttribute("SubnetMask");
+                            if (sub != null && !string.IsNullOrEmpty(sub.ToString())) subnet = sub.ToString();
+                        }
+                        catch { }
+                    }
+                }
+                catch { }
+
+                modulesList.Add(modInfo);
+            }
+
+            res["ipAddress"] = string.IsNullOrEmpty(ip) ? "192.168.0.1" : ip;
+            res["subnetMask"] = string.IsNullOrEmpty(subnet) ? "255.255.255.0" : subnet;
+            res["pnDeviceName"] = string.IsNullOrEmpty(pnDeviceName) ? dev.Name.ToLower() : pnDeviceName;
+            res["modules"] = modulesList;
+
+            return res;
+        }
+
+        private static Dictionary<string, object> DoSetDeviceParam(Dictionary<string, object> args)
+        {
+            EnsureConnected();
+            string deviceName = args != null && args.ContainsKey("deviceName") ? args["deviceName"] as string : null;
+            string parameter = args != null && args.ContainsKey("parameter") ? (args["parameter"] as string ?? "").ToLower() : "";
+            string value = args != null && args.ContainsKey("value") ? args["value"] as string : "";
+
+            if (string.IsNullOrEmpty(parameter)) throw new ArgumentException("parameter is required ('ip', 'subnet', 'pn_name', 'device_name').");
+            if (value == null) throw new ArgumentException("value is required.");
+
+            Device dev = FindDevice(deviceName);
+            if (dev == null) throw new InvalidOperationException("Device not found: " + deviceName);
+
+            if (parameter == "device_name" || parameter == "name")
+            {
+                try { dev.Name = value; } catch { dev.SetAttribute("Name", value); }
+                return new Dictionary<string, object> { { "status", "Success" }, { "parameter", parameter }, { "newValue", value } };
+            }
+
+            bool updated = false;
+            foreach (DeviceItem di in dev.DeviceItems)
+            {
+                if (parameter == "pn_name")
+                {
+                    try
+                    {
+                        di.SetAttribute("PnDeviceName", value);
+                        updated = true;
+                        break;
+                    }
+                    catch { }
+                }
+
+                try
+                {
+                    var netIf = di.GetService<Siemens.Engineering.HW.Features.NetworkInterface>();
+                    if (netIf != null && netIf.Nodes != null && netIf.Nodes.Count > 0)
+                    {
+                        var node = netIf.Nodes[0];
+                        if (parameter == "ip" || parameter == "ipaddress")
+                        {
+                            node.SetAttribute("Address", value);
+                            updated = true;
+                            break;
+                        }
+                        else if (parameter == "subnet" || parameter == "subnetmask")
+                        {
+                            node.SetAttribute("SubnetMask", value);
+                            updated = true;
+                            break;
+                        }
+                    }
+                }
+                catch { }
+            }
+
+            if (!updated)
+            {
+                throw new InvalidOperationException("Failed to set parameter '" + parameter + "'. Attribute or network node not found on device.");
+            }
+
+            return new Dictionary<string, object>
+            {
+                { "status", "Success" },
+                { "deviceName", dev.Name },
+                { "parameter", parameter },
+                { "newValue", value }
+            };
+        }
+
+        private static Dictionary<string, object> DoAddDevice(Dictionary<string, object> args)
+        {
+            EnsureConnected();
+            string typeIdentifier = args != null && args.ContainsKey("typeIdentifier") ? args["typeIdentifier"] as string : "";
+            string deviceName = args != null && args.ContainsKey("deviceName") ? args["deviceName"] as string : "";
+            string stationName = args != null && args.ContainsKey("stationName") ? args["stationName"] as string : deviceName;
+
+            if (string.IsNullOrEmpty(typeIdentifier)) throw new ArgumentException("typeIdentifier is required (e.g. 'OrderNumber:6ES7 515-2AM02-0AB0/V2.9').");
+            if (string.IsNullOrEmpty(deviceName)) throw new ArgumentException("deviceName is required.");
+
+            Device dev = _activeProject.Devices.CreateWithItem(typeIdentifier, deviceName, stationName);
+            return new Dictionary<string, object>
+            {
+                { "status", "Success" },
+                { "deviceName", dev.Name },
+                { "typeIdentifier", dev.TypeIdentifier }
+            };
+        }
+
+        private static Dictionary<string, object> DoAddModule(Dictionary<string, object> args)
+        {
+            EnsureConnected();
+            string deviceName = args != null && args.ContainsKey("deviceName") ? args["deviceName"] as string : null;
+            string typeIdentifier = args != null && args.ContainsKey("typeIdentifier") ? args["typeIdentifier"] as string : "";
+            string moduleName = args != null && args.ContainsKey("moduleName") ? args["moduleName"] as string : "";
+            int slot = args != null && args.ContainsKey("slot") ? Convert.ToInt32(args["slot"]) : 1;
+
+            if (string.IsNullOrEmpty(typeIdentifier)) throw new ArgumentException("typeIdentifier is required.");
+            if (string.IsNullOrEmpty(moduleName)) throw new ArgumentException("moduleName is required.");
+
+            Device dev = FindDevice(deviceName);
+            if (dev == null) throw new InvalidOperationException("Device not found: " + deviceName);
+
+            DeviceItem targetHead = null;
+            foreach (DeviceItem di in dev.DeviceItems)
+            {
+                if (di.CanPlugNew(typeIdentifier, moduleName, slot))
+                {
+                    targetHead = di;
+                    break;
+                }
+            }
+
+            if (targetHead == null && dev.DeviceItems.Count > 0)
+            {
+                targetHead = dev.DeviceItems[0];
+            }
+
+            if (targetHead == null)
+            {
+                throw new InvalidOperationException("No rack or device item found capable of plugging module into slot " + slot);
+            }
+
+            DeviceItem plugged = targetHead.PlugNew(typeIdentifier, moduleName, slot);
+            return new Dictionary<string, object>
+            {
+                { "status", "Success" },
+                { "moduleName", plugged.Name },
+                { "slot", slot },
+                { "typeIdentifier", typeIdentifier }
+            };
         }
 
         // --- Tags ---
@@ -6744,6 +8510,156 @@ private static Dictionary<string, object> DoCheckSimulation()
             EnsureConnected();
             _activeProject.Save();
             return "Project '" + _activeProject.Name + "' saved successfully.";
+        }
+
+        private static string FormatBytes(long bytes)
+        {
+            if (bytes <= 0) return "0 B";
+            string[] units = { "B", "KB", "MB", "GB", "TB" };
+            int digitGroups = (int)(Math.Log10(bytes) / Math.Log10(1024));
+            if (digitGroups >= units.Length) digitGroups = units.Length - 1;
+            return string.Format("{0:F2} {1}", bytes / Math.Pow(1024, digitGroups), units[digitGroups]);
+        }
+
+        private static Dictionary<string, object> DoArchiveProject(Dictionary<string, object> args)
+        {
+            EnsureConnected();
+            if (_activeProject == null || _activeProject.Path == null)
+            {
+                throw new InvalidOperationException(L("Нет активного проекта для архивации.", "No active project to archive."));
+            }
+
+            // Save project first (mandatory before Archive to prevent EngineeringTargetInvocationException)
+            _activeProject.Save();
+
+            string projName = _activeProject.Name;
+            var dirInfo = _activeProject.Path.Directory;
+            var parentDir = dirInfo.Parent != null ? dirInfo.Parent.FullName : dirInfo.FullName;
+
+            string targetDirStr = args != null && args.ContainsKey("targetDirectory") && !string.IsNullOrEmpty(args["targetDirectory"] as string)
+                ? args["targetDirectory"] as string
+                : Path.Combine(parentDir, "Archives");
+
+            if (!Directory.Exists(targetDirStr))
+            {
+                Directory.CreateDirectory(targetDirStr);
+            }
+
+            string dateFmt = _backupUseShortYear ? "dd.MM.yy" : "dd.MM.yyyy";
+            string todayStr = DateTime.Now.ToString(dateFmt);
+
+            string customName = args != null && args.ContainsKey("archiveName") ? args["archiveName"] as string : null;
+            string archiveFileName;
+            if (!string.IsNullOrWhiteSpace(customName))
+            {
+                archiveFileName = customName.Trim();
+            }
+            else
+            {
+                archiveFileName = projName + "_Archive_" + todayStr;
+            }
+
+            // Ensure archiveFileName has .zap18 extension so Siemens Openness saves it with .zap18
+            if (!archiveFileName.EndsWith(".zap18", StringComparison.OrdinalIgnoreCase))
+            {
+                archiveFileName = archiveFileName + ".zap18";
+            }
+
+            string expectedZapPath = Path.Combine(targetDirStr, archiveFileName);
+            if (File.Exists(expectedZapPath))
+            {
+                try { File.Delete(expectedZapPath); } catch { }
+            }
+
+            Log("Archiving project '" + projName + "' to: " + expectedZapPath);
+            StartAutoConfirmWatcher();
+
+            // Archive with DiscardRestorableDataAndCompressed for cleanest, most portable archive
+            var mode = ProjectArchivationMode.DiscardRestorableDataAndCompressed;
+            if (args != null && args.ContainsKey("mode") && args["mode"] != null)
+            {
+                string mStr = args["mode"].ToString().ToLowerInvariant();
+                if (mStr == "compressed") mode = ProjectArchivationMode.Compressed;
+                else if (mStr == "none") mode = ProjectArchivationMode.None;
+                else if (mStr == "discardrestorabledata") mode = ProjectArchivationMode.DiscardRestorableData;
+            }
+
+            _activeProject.Archive(new DirectoryInfo(targetDirStr), archiveFileName, mode);
+
+            long fileSizeBytes = 0;
+            if (File.Exists(expectedZapPath))
+            {
+                fileSizeBytes = new FileInfo(expectedZapPath).Length;
+            }
+
+            return new Dictionary<string, object>
+            {
+                { "status", "Success" },
+                { "projectName", projName },
+                { "archiveName", archiveFileName },
+                { "archivePath", expectedZapPath },
+                { "targetDirectory", targetDirStr },
+                { "sizeBytes", fileSizeBytes },
+                { "sizeFormatted", FormatBytes(fileSizeBytes) },
+                { "mode", mode.ToString() },
+                { "message", L("Проект успешно архивирован в .zap18: ", "Project successfully archived to .zap18: ") + expectedZapPath }
+            };
+        }
+
+        private static Dictionary<string, object> DoRetrieveProject(Dictionary<string, object> args)
+        {
+            if (args == null || !args.ContainsKey("archivePath") || string.IsNullOrEmpty(args["archivePath"] as string))
+            {
+                throw new ArgumentException(L("Укажите путь к архиву .zap18 (аргумент 'archivePath').", "Specify path to .zap18 archive ('archivePath' argument)."));
+            }
+
+            string archivePath = args["archivePath"] as string;
+            if (!File.Exists(archivePath))
+            {
+                throw new FileNotFoundException(L("Файл архива не найден: ", "Archive file not found: ") + archivePath);
+            }
+
+            FileInfo archiveFile = new FileInfo(archivePath);
+            string targetDirStr = args.ContainsKey("targetDirectory") && !string.IsNullOrEmpty(args["targetDirectory"] as string)
+                ? args["targetDirectory"] as string
+                : Path.Combine(archiveFile.Directory.FullName, Path.GetFileNameWithoutExtension(archivePath) + "_Retrieved");
+
+            if (!Directory.Exists(targetDirStr))
+            {
+                Directory.CreateDirectory(targetDirStr);
+            }
+
+            Log("Retrieving project archive '" + archivePath + "' to: " + targetDirStr);
+            StartAutoConfirmWatcher();
+
+            if (_activeTiaPortal == null)
+            {
+                if (TiaPortal.GetProcesses().Count > 0)
+                {
+                    _activeTiaPortal = TiaPortal.GetProcesses()[0].Attach();
+                }
+                else
+                {
+                    _activeTiaPortal = new TiaPortal(TiaPortalMode.WithUserInterface);
+                }
+            }
+
+            var retrievedProject = _activeTiaPortal.Projects.Retrieve(archiveFile, new DirectoryInfo(targetDirStr));
+            _activeProject = retrievedProject;
+            if (_activeProject.Path != null)
+            {
+                _lastProjectPath = _activeProject.Path.FullName;
+                SaveSettings();
+            }
+
+            return new Dictionary<string, object>
+            {
+                { "status", "Success" },
+                { "projectName", _activeProject.Name },
+                { "projectPath", _activeProject.Path != null ? _activeProject.Path.FullName : targetDirStr },
+                { "retrievedFrom", archivePath },
+                { "message", L("Проект успешно извлечен из архива: ", "Project successfully retrieved from archive: ") + _activeProject.Name }
+            };
         }
 
         private static Dictionary<string, object> DoSaveProjectVersion(Dictionary<string, object> args)
@@ -7160,8 +9076,27 @@ private static Dictionary<string, object> DoCheckSimulation()
 
         private static Siemens.Engineering.SW.Types.PlcType FindTypeByPath(Siemens.Engineering.SW.Types.PlcTypeGroup group, string path)
         {
-            string[] parts = path.Split('/');
-            return FindTypeInternal(group, parts, 0);
+            if (string.IsNullOrEmpty(path)) return null;
+            if (path.Contains("/"))
+            {
+                string[] parts = path.Split('/');
+                return FindTypeInternal(group, parts, 0);
+            }
+            var t = group.Types.Find(path);
+            if (t != null) return t;
+            return FindTypeByNameRecursive(group, path);
+        }
+
+        private static Siemens.Engineering.SW.Types.PlcType FindTypeByNameRecursive(Siemens.Engineering.SW.Types.PlcTypeGroup group, string name)
+        {
+            var t = group.Types.Find(name);
+            if (t != null) return t;
+            foreach (var sub in group.Groups)
+            {
+                t = FindTypeByNameRecursive(sub, name);
+                if (t != null) return t;
+            }
+            return null;
         }
 
         private static Siemens.Engineering.SW.Types.PlcType FindTypeInternal(Siemens.Engineering.SW.Types.PlcTypeGroup group, string[] parts, int index)
@@ -7188,8 +9123,27 @@ private static Dictionary<string, object> DoCheckSimulation()
 
         private static PlcBlock FindBlockByPath(PlcBlockGroup group, string path)
         {
-            string[] parts = path.Split('/');
-            return FindBlockInternal(group, parts, 0);
+            if (string.IsNullOrEmpty(path)) return null;
+            if (path.Contains("/"))
+            {
+                string[] parts = path.Split('/');
+                return FindBlockInternal(group, parts, 0);
+            }
+            var b = group.Blocks.Find(path);
+            if (b != null) return b;
+            return FindBlockByNameRecursive(group, path);
+        }
+
+        private static PlcBlock FindBlockByNameRecursive(PlcBlockGroup group, string name)
+        {
+            var b = group.Blocks.Find(name);
+            if (b != null) return b;
+            foreach (var sub in group.Groups)
+            {
+                b = FindBlockByNameRecursive(sub, name);
+                if (b != null) return b;
+            }
+            return null;
         }
 
         private static PlcBlock FindBlockInternal(PlcBlockGroup group, string[] parts, int index)
@@ -7388,6 +9342,39 @@ private static Dictionary<string, object> DoCheckSimulation()
                     case "tia_read_scl":
                         data = DoReadScl(args);
                         break;
+                    case "tia_read_block_interface":
+                        data = DoReadBlockInterface(args);
+                        break;
+                    case "tia_search_blocks":
+                        data = DoSearchBlocks(args);
+                        break;
+                    case "tia_search_tags":
+                        data = DoSearchTags(args);
+                        break;
+                    case "tia_create_block":
+                        data = DoCreateBlock(args);
+                        break;
+                    case "tia_delete_block":
+                        data = DoDeleteBlock(args);
+                        break;
+                    case "tia_copy_block":
+                        data = DoCopyBlock(args);
+                        break;
+                    case "tia_call_block":
+                        data = DoCallBlock(args);
+                        break;
+                    case "tia_get_device_params":
+                        data = DoGetDeviceParams(args);
+                        break;
+                    case "tia_set_device_param":
+                        data = DoSetDeviceParam(args);
+                        break;
+                    case "tia_add_device":
+                        data = DoAddDevice(args);
+                        break;
+                    case "tia_add_module":
+                        data = DoAddModule(args);
+                        break;
                     case "tia_list_tags":
                         data = DoListTags(args);
                         break;
@@ -7405,6 +9392,12 @@ private static Dictionary<string, object> DoCheckSimulation()
                         break;
                     case "tia_save_project_version":
                         data = DoSaveProjectVersion(args);
+                        break;
+                    case "tia_archive_project":
+                        data = DoArchiveProject(args);
+                        break;
+                    case "tia_retrieve_project":
+                        data = DoRetrieveProject(args);
                         break;
                     case "tia_audit_project":
                         data = DoAuditProject(args);
@@ -7435,7 +9428,7 @@ private static Dictionary<string, object> DoCheckSimulation()
                         break;
                     case "tia_batch_export":
                         EnsureConnected();
-                        string outPath = args.ContainsKey("outputDirectory") ? args["outputDirectory"] as string : @"C:\Users\aa.fedin\Desktop\Tia_18_Agent\Export_" + _activeProject.Name;
+                        string outPath = args.ContainsKey("outputDirectory") ? args["outputDirectory"] as string : Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "Export_" + _activeProject.Name);
                         data = BatchExport(FindPlcSoftware(FindDevice(null)), outPath, "all");
                         break;
                     case "tia_batch_import":
@@ -7471,7 +9464,7 @@ private static Dictionary<string, object> DoCheckSimulation()
                         break;
                     case "tia_export_tags_csv":
                         EnsureConnected();
-                        string tagCsvOut = args != null && args.ContainsKey("outputPath") ? args["outputPath"] as string : @"C:\Users\aa.fedin\Desktop\Tia_18_Agent\Tags_" + _activeProject.Name + ".csv";
+                        string tagCsvOut = args != null && args.ContainsKey("outputPath") ? args["outputPath"] as string : Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "Tags_" + _activeProject.Name + ".csv");
                         data = DoExportTagsCsv(FindPlcSoftware(FindDevice(null)), tagCsvOut);
                         break;
                     case "tia_check_tags":
@@ -7649,10 +9642,96 @@ private static Dictionary<string, object> DoCheckSimulation()
                 { "xmlFilePath", new Dictionary<string, object> { { "type", "string" }, { "description", "Absolute path to the XML file." } } },
                 { "groupPath", new Dictionary<string, object> { { "type", "string" }, { "description", "Target block group path e.g. '10_Logic'." } } }
             }, new List<string> { "xmlFilePath" }));
-            list.Add(CreateToolDef("tia_read_scl", "Decompiles SimaticML XML into readable Structured Text (SCL) logic.", new Dictionary<string, object>
+            list.Add(CreateToolDef("tia_read_scl", "Decompiles SimaticML XML into readable Structured Text (SCL) logic with selective network filtering to save tokens.", new Dictionary<string, object>
             {
-                { "blockPath", new Dictionary<string, object> { { "type", "string" }, { "description", "Block path e.g. 'Main'." } } }
+                { "blockPath", new Dictionary<string, object> { { "type", "string" }, { "description", "Block path e.g. 'Main'." } } },
+                { "networkNumber", new Dictionary<string, object> { { "type", "integer" }, { "description", "Optional 1-based network number. When specified, returns ONLY that network, reducing token consumption by >90%." } } },
+                { "startNetwork", new Dictionary<string, object> { { "type", "integer" }, { "description", "Optional start network number for range reading." } } },
+                { "endNetwork", new Dictionary<string, object> { { "type", "integer" }, { "description", "Optional end network number for range reading." } } },
+                { "outlineOnly", new Dictionary<string, object> { { "type", "boolean" }, { "description", "If true, returns only a compact outline of network numbers and titles without full code, minimizing token consumption." } } }
             }, new List<string> { "blockPath" }));
+            list.Add(CreateToolDef("tia_read_block_interface", "Decompiles block (DB, FB, FC) or UDT interface into concise SCL variable declarations (VAR_INPUT, VAR_OUTPUT, VAR, etc.), saving >90% tokens.", new Dictionary<string, object>
+            {
+                { "blockPath", new Dictionary<string, object> { { "type", "string" }, { "description", "Path to block or UDT (e.g. 'MAIN_DB', 'Tags_StorePallet_DB', or '11_Conveyors/Conv_05_FC')." } } },
+                { "sectionFilter", new Dictionary<string, object> { { "type", "string" }, { "description", "Optional section filter: 'Input', 'Output', 'InOut', 'Static', 'Temp'." } } },
+                { "deviceName", new Dictionary<string, object> { { "type", "string" }, { "description", "Optional device name." } } }
+            }, new List<string> { "blockPath" }));
+            list.Add(CreateToolDef("tia_search_blocks", "Fast local search for blocks and UDTs by name, number, type or code snippet on the host PC to minimize token usage.", new Dictionary<string, object>
+            {
+                { "query", new Dictionary<string, object> { { "type", "string" }, { "description", "Search query (substring, wildcard * or regex) matching block name, number or path." } } },
+                { "typeFilter", new Dictionary<string, object> { { "type", "string" }, { "description", "Optional filter: 'FC', 'FB', 'DB', 'OB', 'UDT'." } } },
+                { "groupFilter", new Dictionary<string, object> { { "type", "string" }, { "description", "Optional folder/group filter e.g. 'Conveyors'." } } },
+                { "includeCode", new Dictionary<string, object> { { "type", "boolean" }, { "description", "If true, also searches inside decompiled SCL logic text." } } }
+            }));
+            list.Add(CreateToolDef("tia_search_tags", "Fast local search across PLC tag tables by tag name, address (%I, %Q, %M, %DB) or comment.", new Dictionary<string, object>
+            {
+                { "query", new Dictionary<string, object> { { "type", "string" }, { "description", "Search query for tag name, address or comment." } } },
+                { "tableName", new Dictionary<string, object> { { "type", "string" }, { "description", "Optional tag table name filter." } } }
+            }));
+            list.Add(CreateToolDef("tia_create_block", "Creates and compiles a new block (FC, FB, DB) or UDT into TIA Portal project using native SCL code.", new Dictionary<string, object>
+            {
+                { "blockType", new Dictionary<string, object> { { "type", "string" }, { "description", "Type of block: 'FC', 'FB', 'DB', or 'UDT'." } } },
+                { "blockName", new Dictionary<string, object> { { "type", "string" }, { "description", "Name of the block to create (e.g. 'Conv_Control_FC')." } } },
+                { "code", new Dictionary<string, object> { { "type", "string" }, { "description", "SCL code (declarations and/or logic)." } } },
+                { "groupPath", new Dictionary<string, object> { { "type", "string" }, { "description", "Optional target block folder/group e.g. '10_Logic'." } } }
+            }, new List<string> { "blockType", "blockName", "code" }));
+            list.Add(CreateToolDef("tia_delete_block", "Deletes a block (FC, FB, DB) or UDT from the project by name or path.", new Dictionary<string, object>
+            {
+                { "blockPath", new Dictionary<string, object> { { "type", "string" }, { "description", "Block or UDT name or path (e.g. 'Test_FC' or '10_Logic/Old_FB')." } } },
+                { "deviceName", new Dictionary<string, object> { { "type", "string" }, { "description", "Optional device name." } } }
+            }, new List<string> { "blockPath" }));
+            list.Add(CreateToolDef("tia_copy_block", "Copies a block or UDT from another TIA Portal project (or running instance) into the current project.", new Dictionary<string, object>
+            {
+                { "sourceBlockPath", new Dictionary<string, object> { { "type", "string" }, { "description", "Block path in source project (e.g. 'Conv_Speed_Calc' or '10_Logic/Safety_FC')." } } },
+                { "sourceProjectPath", new Dictionary<string, object> { { "type", "string" }, { "description", "Path to source .ap18 project file." } } },
+                { "sourcePid", new Dictionary<string, object> { { "type", "integer" }, { "description", "Optional PID of running source TIA Portal instance." } } },
+                { "targetGroupPath", new Dictionary<string, object> { { "type", "string" }, { "description", "Optional target group in current project." } } },
+                { "isUdt", new Dictionary<string, object> { { "type", "boolean" }, { "description", "True if copying a PLC data type (UDT)." } } }
+            }, new List<string> { "sourceBlockPath" }));
+            list.Add(CreateToolDef("tia_call_block", "Calls a block (FB or FC) inside a caller block. For FBs called inside an FB (e.g. Zone_2_Conveyors_FB), automatically implements Multi-Instance (#inst_name declared in Static VAR section) without creating separate global DBs. For FCs or calls from FC/OB, creates dedicated Instance DB or calls directly.", new Dictionary<string, object>
+            {
+                { "callerBlockName", new Dictionary<string, object> { { "type", "string" }, { "description", "Caller block name or path (e.g. 'Zone_2_Conveyors_FB', 'Main')." } } },
+                { "calleeBlockName", new Dictionary<string, object> { { "type", "string" }, { "description", "Callee block name or path (e.g. 'Conv_06_ProductTransfering_FB', 'Errors_FC')." } } },
+                { "instanceName", new Dictionary<string, object> { { "type", "string" }, { "description", "Optional instance name (e.g. 'inst_Conv_06'). Defaults to 'inst_<calleeBlockName>'." } } },
+                { "callType", new Dictionary<string, object> { { "type", "string" }, { "description", "Optional call type: 'auto' (default: multi for FB in FB, single for FB in FC/OB, direct for FC), 'multi', 'single', 'direct'." } } },
+                { "parameters", new Dictionary<string, object> { { "type", "object" }, { "description", "Optional parameter mappings e.g. { 'Enable': 'TRUE', 'Error': '#ZoneError' }." } } },
+                { "networkTitle", new Dictionary<string, object> { { "type", "string" }, { "description", "Optional title for the new network containing the call." } } },
+                { "deviceName", new Dictionary<string, object> { { "type", "string" }, { "description", "Optional device name." } } }
+            }, new List<string> { "callerBlockName", "calleeBlockName" }));
+            list.Add(CreateToolDef("tia_archive_project", "Archives the active project into a compressed .zap18 file using Openness DiscardRestorableDataAndCompressed mode for fast, lightweight transfer.", new Dictionary<string, object>
+            {
+                { "archiveName", new Dictionary<string, object> { { "type", "string" }, { "description", "Optional archive file name (without .zap18). Defaults to '<ProjectName>_Archive_<Date>'." } } },
+                { "targetDirectory", new Dictionary<string, object> { { "type", "string" }, { "description", "Optional target folder. Defaults to '<ProjectParent>/Archives'." } } },
+                { "mode", new Dictionary<string, object> { { "type", "string" }, { "description", "Optional mode: 'DiscardRestorableDataAndCompressed' (default), 'Compressed', 'None', 'DiscardRestorableData'." } } }
+            }));
+            list.Add(CreateToolDef("tia_retrieve_project", "Retrieves and extracts an archived TIA Portal project from a .zap18 file.", new Dictionary<string, object>
+            {
+                { "archivePath", new Dictionary<string, object> { { "type", "string" }, { "description", "Absolute path to .zap18 file." } } },
+                { "targetDirectory", new Dictionary<string, object> { { "type", "string" }, { "description", "Optional destination folder for extracted project." } } }
+            }, new List<string> { "archivePath" }));
+            list.Add(CreateToolDef("tia_get_device_params", "Retrieves controller hardware parameters, PROFINET IP address, subnet mask, PN device name and slotted modules.", new Dictionary<string, object>
+            {
+                { "deviceName", new Dictionary<string, object> { { "type", "string" }, { "description", "Optional device name. Default is active PLC." } } }
+            }));
+            list.Add(CreateToolDef("tia_set_device_param", "Modifies controller parameters: IP address, subnet mask, PROFINET device name or station name.", new Dictionary<string, object>
+            {
+                { "parameter", new Dictionary<string, object> { { "type", "string" }, { "description", "'ip', 'subnet', 'pn_name', or 'device_name'." } } },
+                { "value", new Dictionary<string, object> { { "type", "string" }, { "description", "New value (e.g. '192.168.1.100', '255.255.255.0', 'conveyor-plc')." } } },
+                { "deviceName", new Dictionary<string, object> { { "type", "string" }, { "description", "Optional device name." } } }
+            }, new List<string> { "parameter", "value" }));
+            list.Add(CreateToolDef("tia_add_device", "Adds a new device (PLC controller, drive, HMI) to the project from catalog or order number (MLFB).", new Dictionary<string, object>
+            {
+                { "typeIdentifier", new Dictionary<string, object> { { "type", "string" }, { "description", "Catalog type identifier or MLFB (e.g. 'OrderNumber:6ES7 515-2AM02-0AB0/V2.9')." } } },
+                { "deviceName", new Dictionary<string, object> { { "type", "string" }, { "description", "Unique device name (e.g. 'PLC_Conveyors')." } } },
+                { "stationName", new Dictionary<string, object> { { "type", "string" }, { "description", "Optional station name." } } }
+            }, new List<string> { "typeIdentifier", "deviceName" }));
+            list.Add(CreateToolDef("tia_add_module", "Plugs an I/O module into a specific slot/rack of a PLC or distributed I/O station.", new Dictionary<string, object>
+            {
+                { "typeIdentifier", new Dictionary<string, object> { { "type", "string" }, { "description", "Module MLFB or type (e.g. 'OrderNumber:6ES7 521-1BL00-0AB0/V2.1')." } } },
+                { "moduleName", new Dictionary<string, object> { { "type", "string" }, { "description", "Name of module (e.g. 'DI_16x24VDC_Slot2')." } } },
+                { "slot", new Dictionary<string, object> { { "type", "integer" }, { "description", "Slot number (e.g. 2, 3, etc.)." } } },
+                { "deviceName", new Dictionary<string, object> { { "type", "string" }, { "description", "Optional device name." } } }
+            }, new List<string> { "typeIdentifier", "moduleName", "slot" }));
             list.Add(CreateToolDef("tia_list_tags", "Lists all PLC tag tables and tag names.", new Dictionary<string, object>()));
             list.Add(CreateToolDef("tia_export_tags", "Exports a PLC tag table as XML.", new Dictionary<string, object>
             {
@@ -7832,7 +9911,7 @@ private static Dictionary<string, object> DoCheckSimulation()
                     case "export-tags":
                     case "tags-csv":
                         DoConnectProcess(new Dictionary<string, object>());
-                        string outCsv = args.Length > 1 && !args[1].StartsWith("--") ? args[1] : @"C:\Users\aa.fedin\Desktop\Tia_18_Agent\Tags_" + _activeProject.Name + ".csv";
+                        string outCsv = args.Length > 1 && !args[1].StartsWith("--") ? args[1] : Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "Tags_" + _activeProject.Name + ".csv");
                         string csvRes = DoExportTagsCsv(FindPlcSoftware(FindDevice(null)), outCsv);
                         if (isJson) Console.WriteLine(_serializer.Serialize(new Dictionary<string, object> { { "status", "Success" }, { "message", csvRes }, { "outputPath", outCsv } }));
                         else Console.WriteLine(csvRes);
@@ -7840,10 +9919,27 @@ private static Dictionary<string, object> DoCheckSimulation()
                     case "export-all":
                     case "--export-all":
                         DoConnectProcess(new Dictionary<string, object>());
-                        string outP = args.Length > 1 && !args[1].StartsWith("--") ? args[1] : @"C:\Users\aa.fedin\Desktop\Tia_18_Agent\Export_" + _activeProject.Name;
+                        string outP = args.Length > 1 && !args[1].StartsWith("--") ? args[1] : Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "Export_" + _activeProject.Name);
                         string expRes = BatchExport(FindPlcSoftware(FindDevice(null)), outP, "all");
                         if (isJson) Console.WriteLine(_serializer.Serialize(new Dictionary<string, object> { { "status", "Success" }, { "message", expRes }, { "outputDirectory", outP } }));
                         else Console.WriteLine(expRes);
+                        break;
+                    case "export-block":
+                    case "--export-block":
+                        DoConnectProcess(new Dictionary<string, object>());
+                        if (args.Length < 2)
+                        {
+                            Console.WriteLine("Usage: export-block <blockPath> [outputPath]");
+                            break;
+                        }
+                        string expBlkPath = args[1];
+                        string expBlkOut = args.Length > 2 && !args[2].StartsWith("--") ? args[2] : expBlkPath + ".xml";
+                        var expBlkArgs = new Dictionary<string, object>
+                        {
+                            { "blockPath", expBlkPath },
+                            { "outputFilePath", expBlkOut }
+                        };
+                        Console.WriteLine(_serializer.Serialize(DoExportBlock(expBlkArgs)));
                         break;
                     case "blocks":
                     case "--blocks":
@@ -7855,8 +9951,206 @@ private static Dictionary<string, object> DoCheckSimulation()
                         DoConnectProcess(new Dictionary<string, object>());
                         Console.WriteLine(_serializer.Serialize(DoListDevices()));
                         break;
+                    case "search-blocks":
+                    case "--search-blocks":
+                        DoConnectProcess(new Dictionary<string, object>());
+                        string bQuery = args.Length > 1 && !args[1].StartsWith("--") ? args[1] : "";
+                        string bType = args.Length > 2 && !args[2].StartsWith("--") ? args[2] : "";
+                        var sbArgs = new Dictionary<string, object> { { "query", bQuery }, { "typeFilter", bType } };
+                        Console.WriteLine(_serializer.Serialize(DoSearchBlocks(sbArgs)));
+                        break;
+                    case "search-tags":
+                    case "--search-tags":
+                        DoConnectProcess(new Dictionary<string, object>());
+                        string tQuery = args.Length > 1 && !args[1].StartsWith("--") ? args[1] : "";
+                        var stArgs = new Dictionary<string, object> { { "query", tQuery } };
+                        Console.WriteLine(_serializer.Serialize(DoSearchTags(stArgs)));
+                        break;
+                    case "read-interface":
+                    case "--read-interface":
+                        DoConnectProcess(new Dictionary<string, object>());
+                        string ifacePath = args.Length > 1 ? args[1] : "MAIN_DB";
+                        var ifArgs = new Dictionary<string, object> { { "blockPath", ifacePath } };
+                        if (args.Length > 2 && !args[2].StartsWith("--")) ifArgs["sectionFilter"] = args[2];
+                        Console.WriteLine(DoReadBlockInterface(ifArgs));
+                        break;
+                    case "read-scl":
+                    case "--read-scl":
+                        DoConnectProcess(new Dictionary<string, object>());
+                        string sclPath = args.Length > 1 ? args[1] : "Main";
+                        var rsArgs = new Dictionary<string, object> { { "blockPath", sclPath } };
+                        if (args.Length > 2)
+                        {
+                            if (args[2].Equals("--outline", StringComparison.OrdinalIgnoreCase))
+                            {
+                                rsArgs["outlineOnly"] = true;
+                            }
+                            else
+                            {
+                                int parsedNet = 0;
+                                if (int.TryParse(args[2], out parsedNet)) rsArgs["networkNumber"] = parsedNet;
+                            }
+                        }
+                        Console.WriteLine(DoReadScl(rsArgs));
+                        break;
+                    case "call-block":
+                    case "--call-block":
+                        DoConnectProcess(new Dictionary<string, object>());
+                        if (args.Length < 3)
+                        {
+                            Console.WriteLine("Usage: call-block <callerBlockName> <calleeBlockName> [instanceName] [callType: auto|multi|single|direct]");
+                            break;
+                        }
+                        var callBlockArgs = new Dictionary<string, object>
+                        {
+                            { "callerBlockName", args[1] },
+                            { "calleeBlockName", args[2] }
+                        };
+                        for (int i = 3; i < args.Length; i++)
+                        {
+                            if (args[i].StartsWith("--")) continue;
+                            if (args[i].Contains(":=")) callBlockArgs["parameters"] = args[i];
+                            else if (args[i].Equals("auto", StringComparison.OrdinalIgnoreCase) ||
+                                     args[i].Equals("multi", StringComparison.OrdinalIgnoreCase) ||
+                                     args[i].Equals("single", StringComparison.OrdinalIgnoreCase) ||
+                                     args[i].Equals("direct", StringComparison.OrdinalIgnoreCase))
+                            {
+                                callBlockArgs["callType"] = args[i];
+                            }
+                            else if (!callBlockArgs.ContainsKey("instanceName"))
+                            {
+                                callBlockArgs["instanceName"] = args[i];
+                            }
+                        }
+                        Console.WriteLine(_serializer.Serialize(DoCallBlock(callBlockArgs)));
+                        break;
+                    case "archive":
+                    case "--archive":
+                    case "zap18":
+                    case "--zap18":
+                        DoConnectProcess(new Dictionary<string, object>());
+                        var archArgs = new Dictionary<string, object>();
+                        if (args.Length > 1 && !args[1].StartsWith("--")) archArgs["archiveName"] = args[1];
+                        if (args.Length > 2 && !args[2].StartsWith("--")) archArgs["targetDirectory"] = args[2];
+                        Console.WriteLine(_serializer.Serialize(DoArchiveProject(archArgs)));
+                        break;
+                    case "retrieve-archive":
+                    case "--retrieve-archive":
+                        if (args.Length < 2)
+                        {
+                            Console.WriteLine("Usage: retrieve-archive <archivePath> [targetDirectory]");
+                            break;
+                        }
+                        var retCliArgs = new Dictionary<string, object>
+                        {
+                            { "archivePath", args[1] }
+                        };
+                        if (args.Length > 2 && !args[2].StartsWith("--")) retCliArgs["targetDirectory"] = args[2];
+                        Console.WriteLine(_serializer.Serialize(DoRetrieveProject(retCliArgs)));
+                        break;
+                    case "create-block":
+                    case "--create-block":
+                        DoConnectProcess(new Dictionary<string, object>());
+                        if (args.Length < 4)
+                        {
+                            Console.WriteLine("Usage: create-block <type: FC|FB|DB|UDT> <name> <code> [groupPath]");
+                            break;
+                        }
+                        var cbArgs = new Dictionary<string, object>
+                        {
+                            { "blockType", args[1] },
+                            { "blockName", args[2] },
+                            { "code", args[3] }
+                        };
+                        if (args.Length > 4 && !args[4].StartsWith("--")) cbArgs["groupPath"] = args[4];
+                        Console.WriteLine(_serializer.Serialize(DoCreateBlock(cbArgs)));
+                        break;
+                    case "delete-block":
+                    case "--delete-block":
+                        DoConnectProcess(new Dictionary<string, object>());
+                        if (args.Length < 2)
+                        {
+                            Console.WriteLine("Usage: delete-block <blockOrUdtName>");
+                            break;
+                        }
+                        var delCliArgs = new Dictionary<string, object> { { "blockPath", args[1] } };
+                        Console.WriteLine(_serializer.Serialize(DoDeleteBlock(delCliArgs)));
+                        break;
+                    case "copy-block":
+                    case "--copy-block":
+                        DoConnectProcess(new Dictionary<string, object>());
+                        if (args.Length < 2)
+                        {
+                            Console.WriteLine("Usage: copy-block <sourceBlockPath> [targetGroupPath] [sourceProjectPath]");
+                            break;
+                        }
+                        var cpbArgs = new Dictionary<string, object>
+                        {
+                            { "sourceBlockPath", args[1] }
+                        };
+                        if (args.Length > 2 && !args[2].StartsWith("--")) cpbArgs["targetGroupPath"] = args[2];
+                        if (args.Length > 3 && !args[3].StartsWith("--")) cpbArgs["sourceProjectPath"] = args[3];
+                        Console.WriteLine(_serializer.Serialize(DoCopyBlock(cpbArgs)));
+                        break;
+                    case "get-device-params":
+                    case "--get-device-params":
+                        DoConnectProcess(new Dictionary<string, object>());
+                        string devName = args.Length > 1 && !args[1].StartsWith("--") ? args[1] : null;
+                        var gdpArgs = new Dictionary<string, object>();
+                        if (!string.IsNullOrEmpty(devName)) gdpArgs["deviceName"] = devName;
+                        Console.WriteLine(_serializer.Serialize(DoGetDeviceParams(gdpArgs)));
+                        break;
+                    case "set-device-param":
+                    case "--set-device-param":
+                        DoConnectProcess(new Dictionary<string, object>());
+                        if (args.Length < 3)
+                        {
+                            Console.WriteLine("Usage: set-device-param <parameter: ip|subnet|pn_name|device_name> <value> [deviceName]");
+                            break;
+                        }
+                        var sdpArgs = new Dictionary<string, object>
+                        {
+                            { "parameter", args[1] },
+                            { "value", args[2] }
+                        };
+                        if (args.Length > 3 && !args[3].StartsWith("--")) sdpArgs["deviceName"] = args[3];
+                        Console.WriteLine(_serializer.Serialize(DoSetDeviceParam(sdpArgs)));
+                        break;
+                    case "add-device":
+                    case "--add-device":
+                        DoConnectProcess(new Dictionary<string, object>());
+                        if (args.Length < 3)
+                        {
+                            Console.WriteLine("Usage: add-device <typeIdentifier> <deviceName> [stationName]");
+                            break;
+                        }
+                        var adArgs = new Dictionary<string, object>
+                        {
+                            { "typeIdentifier", args[1] },
+                            { "deviceName", args[2] }
+                        };
+                        if (args.Length > 3 && !args[3].StartsWith("--")) adArgs["stationName"] = args[3];
+                        Console.WriteLine(_serializer.Serialize(DoAddDevice(adArgs)));
+                        break;
+                    case "add-module":
+                    case "--add-module":
+                        DoConnectProcess(new Dictionary<string, object>());
+                        if (args.Length < 5)
+                        {
+                            Console.WriteLine("Usage: add-module <deviceName> <slot> <typeIdentifier> <moduleName>");
+                            break;
+                        }
+                        var amArgs = new Dictionary<string, object>
+                        {
+                            { "deviceName", args[1] },
+                            { "slot", int.Parse(args[2]) },
+                            { "typeIdentifier", args[3] },
+                            { "moduleName", args[4] }
+                        };
+                        Console.WriteLine(_serializer.Serialize(DoAddModule(amArgs)));
+                        break;
                     default:
-                        Console.WriteLine("TiaPortal18Agent v" + AGENT_VERSION + ". Commands: list-processes, test-attach, audit, compile, call-tree, dependencies, memory, hardware, blocks, devices, check-tags, export-tags, export-all, --headless, --watch, --mcp, --json");
+                        Console.WriteLine("TiaPortal18Agent v" + AGENT_VERSION + ". Commands: list-processes, test-attach, search-blocks, search-tags, read-interface, read-scl, create-block, call-block, copy-block, archive, zap18, retrieve-archive, get-device-params, set-device-param, add-device, add-module, audit, compile, call-tree, dependencies, memory, hardware, blocks, devices, check-tags, export-tags, export-all, --headless, --watch, --mcp, --json");
                         break;
                 }
             }

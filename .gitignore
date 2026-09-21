@@ -12,6 +12,7 @@ obj/
 *.tmp
 *.log
 *.bak
+*.old.exe
 *.pre_*
 out.txt
 out_ver.txt

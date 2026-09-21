@@ -1,29 +1,29 @@
 param(
-    [string]$Command = "--version",
-    [string]$Arg1 = "",
-    [string]$Arg2 = "",
-    [string]$Arg3 = ""
+    [Parameter(ValueFromRemainingArguments = $true)]
+    [string[]]$AgentArgs
 )
 
 $exe = Join-Path $PSScriptRoot "TiaPortal18Agent.exe"
 if (-not (Test-Path $exe)) {
-    $exe = "C:\Users\aa.fedin\Desktop\Tia_18_Agent\TiaPortal18Agent.exe"
+    $exe = "C:\Users\aa.fedin\Favorites\Tia_18_Agent\TiaPortal18Agent.exe"
 }
 
-$rawArgs = @()
-if ($Command) { $rawArgs += $Command }
-if ($Arg1) { $rawArgs += $Arg1 }
-if ($Arg2) { $rawArgs += $Arg2 }
-if ($Arg3) { $rawArgs += $Arg3 }
+if (-not (Test-Path $exe)) {
+    Write-Error "Executable not found: $exe"
+    exit 1
+}
+
+if (-not $AgentArgs -or $AgentArgs.Length -eq 0) {
+    $AgentArgs = @("--version")
+}
 
 try {
     $bytes = [System.IO.File]::ReadAllBytes($exe)
     $asm = [System.Reflection.Assembly]::Load($bytes)
-    $asm.EntryPoint.Invoke($null, (, [string[]]$rawArgs))
+    $asm.EntryPoint.Invoke($null, (, [string[]]$AgentArgs))
 } catch {
     Write-Error "Execution error: $_"
     if ($_.Exception.InnerException) {
         Write-Error "Details: $($_.Exception.InnerException)"
     }
 }
-
