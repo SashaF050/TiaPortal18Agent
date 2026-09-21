@@ -34,3 +34,4 @@ test_*.*
 run_test.ps1
 out*.txt
 call_tree.json
+TiaPortal18Agent.exe

@@ -3,9 +3,12 @@ param(
     [string[]]$AgentArgs
 )
 
-$exe = Join-Path $PSScriptRoot "TiaPortal18Agent.exe"
+$exe = Join-Path $PSScriptRoot "TiaPortalAgent.exe"
 if (-not (Test-Path $exe)) {
-    $exe = "C:\Users\aa.fedin\Favorites\Tia_18_Agent\TiaPortal18Agent.exe"
+    $exe = "C:\Users\aa.fedin\Desktop\TiaPortalAgent\TiaPortalAgent.exe"
+}
+if (-not (Test-Path $exe)) {
+    $exe = "C:\Users\aa.fedin\Favorites\Tia_18_Agent\TiaPortalAgent.exe"
 }
 
 if (-not (Test-Path $exe)) {

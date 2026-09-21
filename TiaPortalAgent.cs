@@ -23,8 +23,9 @@ using Siemens.Engineering.SW.Blocks;
 using Siemens.Engineering.SW.Tags;
 using Siemens.Engineering.SW.Types;
 using Siemens.Engineering.SW.ExternalSources;
+using Siemens.Engineering.SW.WatchAndForceTables;
 
-namespace TiaPortal18Agent
+namespace TiaPortalAgent
 {
     // ====================================================================
     // DATA CONTRACTS & JSON-RPC 2.0 PROTOCOL
@@ -418,9 +419,9 @@ namespace TiaPortal18Agent
 
     public class Program
     {
-        public const string AGENT_VERSION = "2.5.0";
+        public const string AGENT_VERSION = "2.6.0";
         public const string BUILD_DATE = "2026-09-21";
-        public const string TIA_TARGET_VERSION = "TIA Portal V14-V20 (V18 Native)";
+        public const string TIA_TARGET_VERSION = "TIA Portal V14-V21 Universal";
 
         private static TiaPortal _activeTiaPortal = null;
         private static Project _activeProject = null;
@@ -884,9 +885,9 @@ namespace TiaPortal18Agent
         private static void PrintVersionInfo()
         {
             Console.WriteLine("================================================================================");
-            Console.WriteLine("  TiaPortal18Agent v" + AGENT_VERSION + " [Comprehensive Multi-Tool & MCP Server]");
+            Console.WriteLine("  TiaPortalAgent v" + AGENT_VERSION + " [Universal Multi-Tool & MCP Server]");
             Console.WriteLine("  Build Date: " + BUILD_DATE + " | Target: " + TIA_TARGET_VERSION);
-            Console.WriteLine("  PublicAPI: Siemens.Engineering.dll V18 Update 5 (x64)");
+            Console.WriteLine("  PublicAPI: Siemens.Engineering.dll (V18/V19/V20/V21 Auto-Detect)");
             Console.WriteLine("  Integrations: Czarnak MCP | cFirewall Whitelist | bulaofen0036 | AnyAutomation");
             Console.WriteLine("================================================================================");
         }
@@ -894,14 +895,17 @@ namespace TiaPortal18Agent
         private static Assembly ResolveSiemensAssembly(object sender, ResolveEventArgs args)
         {
             string name = new AssemblyName(args.Name).Name;
-            string publicApiDir = @"C:\Program Files\Siemens\Automation\Portal V18\PublicAPI\V18";
-            string candidate = Path.Combine(publicApiDir, name + ".dll");
-            if (File.Exists(candidate)) return Assembly.LoadFrom(candidate);
+            string[] versions = new string[] { "V21", "V20", "V19", "V18" };
+            foreach (var v in versions)
+            {
+                string publicApiDir = string.Format(@"C:\Program Files\Siemens\Automation\Portal {0}\PublicAPI\{0}", v);
+                string candidate = Path.Combine(publicApiDir, name + ".dll");
+                if (File.Exists(candidate)) return Assembly.LoadFrom(candidate);
 
-            string binDir = @"C:\Program Files\Siemens\Automation\Portal V18\Bin";
-            candidate = Path.Combine(binDir, name + ".dll");
-            if (File.Exists(candidate)) return Assembly.LoadFrom(candidate);
-
+                string binDir = string.Format(@"C:\Program Files\Siemens\Automation\Portal {0}\Bin", v);
+                candidate = Path.Combine(binDir, name + ".dll");
+                if (File.Exists(candidate)) return Assembly.LoadFrom(candidate);
+            }
             return null;
         }
 
@@ -915,7 +919,7 @@ namespace TiaPortal18Agent
                     WhitelistFile(exePath);
                 }
 
-                string desktopExe = @"C:\Users\aa.fedin\Desktop\Tia_18_Agent\TiaPortal18Agent.exe";
+                string desktopExe = @"C:\Users\aa.fedin\Desktop\TiaPortalAgent\TiaPortalAgent.exe";
                 if (File.Exists(desktopExe))
                 {
                     WhitelistFile(desktopExe);
@@ -939,39 +943,47 @@ namespace TiaPortal18Agent
                 }
 
                 string dateUtcStr = File.GetLastWriteTimeUtc(exePath).ToString("yyyy/MM/dd HH:mm:ss");
+                string[] versions = new string[] { "18.0", "19.0", "20.0", "21.0" };
 
-                string[] rootKeys = new string[]
+                foreach (string ver in versions)
                 {
-                    @"SOFTWARE\Siemens\Automation\Openness\18.0\Whitelist",
-                    @"SOFTWARE\WOW6432Node\Siemens\Automation\Openness\18.0\Whitelist"
-                };
-
-                foreach (string rootPath in rootKeys)
-                {
-                    using (var hklm = Microsoft.Win32.RegistryKey.OpenBaseKey(Microsoft.Win32.RegistryHive.LocalMachine, Microsoft.Win32.RegistryView.Registry64))
+                    string[] rootKeys = new string[]
                     {
-                        using (var whitelistKey = hklm.CreateSubKey(rootPath))
+                        @"SOFTWARE\Siemens\Automation\Openness\" + ver + @"\Whitelist",
+                        @"SOFTWARE\WOW6432Node\Siemens\Automation\Openness\" + ver + @"\Whitelist"
+                    };
+
+                    foreach (string rootPath in rootKeys)
+                    {
+                        try
                         {
-                            if (whitelistKey != null)
+                            using (var hklm = Microsoft.Win32.RegistryKey.OpenBaseKey(Microsoft.Win32.RegistryHive.LocalMachine, Microsoft.Win32.RegistryView.Registry64))
                             {
-                                using (var appKey = whitelistKey.CreateSubKey(exeName))
+                                using (var whitelistKey = hklm.CreateSubKey(rootPath))
                                 {
-                                    if (appKey != null)
+                                    if (whitelistKey != null)
                                     {
-                                        using (var entryKey = appKey.CreateSubKey("Entry"))
+                                        using (var appKey = whitelistKey.CreateSubKey(exeName))
                                         {
-                                            if (entryKey != null)
+                                            if (appKey != null)
                                             {
-                                                entryKey.SetValue("Path", exePath, Microsoft.Win32.RegistryValueKind.String);
-                                                entryKey.SetValue("Date", dateUtcStr, Microsoft.Win32.RegistryValueKind.String);
-                                                entryKey.SetValue("FileHash", fileHashBase64, Microsoft.Win32.RegistryValueKind.String);
-                                                entryKey.SetValue("DateModified", dateUtcStr, Microsoft.Win32.RegistryValueKind.String);
+                                                using (var entryKey = appKey.CreateSubKey("Entry"))
+                                                {
+                                                    if (entryKey != null)
+                                                    {
+                                                        entryKey.SetValue("Path", exePath, Microsoft.Win32.RegistryValueKind.String);
+                                                        entryKey.SetValue("Date", dateUtcStr, Microsoft.Win32.RegistryValueKind.String);
+                                                        entryKey.SetValue("FileHash", fileHashBase64, Microsoft.Win32.RegistryValueKind.String);
+                                                        entryKey.SetValue("DateModified", dateUtcStr, Microsoft.Win32.RegistryValueKind.String);
+                                                    }
+                                                }
                                             }
                                         }
                                     }
                                 }
                             }
                         }
+                        catch { }
                     }
                 }
             }
@@ -1067,7 +1079,7 @@ namespace TiaPortal18Agent
             ClearScreen();
             Console.ForegroundColor = ConsoleColor.Cyan;
             Console.WriteLine("================================================================================");
-            Console.WriteLine("    SIEMENS TIA PORTAL V18 MULTI-TOOL & AUTONOMOUS AGENT v" + AGENT_VERSION);
+            Console.WriteLine("    SIEMENS TIA PORTAL UNIVERSAL AGENT v" + AGENT_VERSION);
             Console.WriteLine("    Target: " + TIA_TARGET_VERSION + " | cFirewall Whitelist: ACTIVE");
             Console.WriteLine("================================================================================");
             Console.ResetColor();
@@ -1082,7 +1094,7 @@ namespace TiaPortal18Agent
 
                 Console.ForegroundColor = ConsoleColor.Cyan;
                 Console.WriteLine("================================================================================");
-                Console.WriteLine(string.Format("  TIA PORTAL V18 AUTONOMOUS AGENT v{0} | {1}: {2}", AGENT_VERSION, L("Проект", "Project"), projName));
+                Console.WriteLine(string.Format("  TIA PORTAL AGENT v{0} | {1}: {2}", AGENT_VERSION, L("Проект", "Project"), projName));
                 Console.WriteLine("================================================================================");
                 Console.ResetColor();
 
@@ -1164,6 +1176,12 @@ namespace TiaPortal18Agent
                 Console.WriteLine("       " + L("Проверка версий TIA, Openness API, прав доступа и Whitelist", "Check TIA versions, Openness API, user rights and Whitelist"));
                 Console.ResetColor();
 
+                Console.ForegroundColor = ConsoleColor.White;
+                Console.WriteLine("   [W] " + L("Таблицы наблюдения и форсирования (Watch & Force Tables)", "Watch & Force Tables"));
+                Console.ForegroundColor = ConsoleColor.DarkGray;
+                Console.WriteLine("       " + L("Просмотр таблиц наблюдения, форсированных сигналов и адресов", "Inspect watch tables, forced signals and addresses"));
+                Console.ResetColor();
+
                 Console.WriteLine();
                 Console.ForegroundColor = ConsoleColor.DarkGray;
                 Console.WriteLine("   [Esc / Q] " + L("Выход из агента", "Exit Agent"));
@@ -1173,7 +1191,7 @@ namespace TiaPortal18Agent
                 Console.WriteLine("   [S] " + L("Сохранить проект", "Save Project") + "     [V] " + L("Сохранить версию (V0→V1)", "Save Version (V0→V1)") + "     [Z] " + L("Архив (.zap18)", "Archive (.zap18)") + "     [P] " + L("Сменить проект", "Switch Project"));
                 Console.ResetColor();
                 Console.WriteLine("────────────────────────────────────────────────────────────────────────────────");
-                Console.Write(" " + L("Выберите действие", "Select action") + " [0-9, R, M, D, S, V, Z, P, Esc]: ");
+                Console.Write(" " + L("Выберите действие", "Select action") + " [0-9, R, M, D, W, S, V, Z, P, Esc]: ");
 
                 var key = Console.ReadKey(true);
                 if (key.Key == ConsoleKey.Escape || key.KeyChar == 'q' || key.KeyChar == 'Q' || key.KeyChar == 'й' || key.KeyChar == 'Й') break;
@@ -1187,10 +1205,12 @@ namespace TiaPortal18Agent
                                             key.KeyChar == '7' || key.KeyChar == 'r' || key.KeyChar == 'R' ||
                                             key.KeyChar == 'к' || key.KeyChar == 'К' || key.KeyChar == 'm' ||
                                             key.KeyChar == 'M' || key.KeyChar == 'ь' || key.KeyChar == 'Ь' ||
-                                            key.KeyChar == 's' || key.KeyChar == 'S' || key.KeyChar == 'ы' ||
-                                            key.KeyChar == 'Ы' || key.KeyChar == 'v' || key.KeyChar == 'V' ||
-                                            key.KeyChar == 'м' || key.KeyChar == 'М' || key.KeyChar == 'z' ||
-                                            key.KeyChar == 'Z' || key.KeyChar == 'я' || key.KeyChar == 'Я');
+                                            key.KeyChar == 'w' || key.KeyChar == 'W' || key.KeyChar == 'ц' ||
+                                            key.KeyChar == 'Ц' || key.KeyChar == 's' || key.KeyChar == 'S' ||
+                                            key.KeyChar == 'ы' || key.KeyChar == 'Ы' || key.KeyChar == 'v' ||
+                                            key.KeyChar == 'V' || key.KeyChar == 'м' || key.KeyChar == 'М' ||
+                                            key.KeyChar == 'z' || key.KeyChar == 'Z' || key.KeyChar == 'я' ||
+                                            key.KeyChar == 'Я');
 
                     if (requiresProject && !IsTiaConnected())
                     {
@@ -1218,6 +1238,7 @@ namespace TiaPortal18Agent
                     else if (key.KeyChar == 'r' || key.KeyChar == 'R' || key.KeyChar == 'к' || key.KeyChar == 'К') ShowKukaSignalsManager();
                     else if (key.KeyChar == 'm' || key.KeyChar == 'M' || key.KeyChar == 'ь' || key.KeyChar == 'Ь') ShowAddressRelocationManager();
                     else if (key.KeyChar == 'd' || key.KeyChar == 'D' || key.KeyChar == 'в' || key.KeyChar == 'В') ShowReadinessCheck();
+                    else if (key.KeyChar == 'w' || key.KeyChar == 'W' || key.KeyChar == 'ц' || key.KeyChar == 'Ц') ShowWatchTablesTui();
                     else if (key.KeyChar == 's' || key.KeyChar == 'S' || key.KeyChar == 'ы' || key.KeyChar == 'Ы')
                     {
                         Console.WriteLine(DoSaveProject());
@@ -9224,6 +9245,619 @@ private static Dictionary<string, object> DoCheckSimulation()
             return cur;
         }
 
+        private static void ShowWatchTablesTui()
+        {
+            ClearScreen();
+            Console.ForegroundColor = ConsoleColor.Cyan;
+            Console.WriteLine("================================================================================");
+            Console.WriteLine("  " + L("ТАБЛИЦЫ НАБЛЮДЕНИЯ И ФОРСИРОВАНИЯ (WATCH & FORCE TABLES)", "WATCH & FORCE TABLES"));
+            Console.WriteLine("================================================================================");
+            Console.ResetColor();
+
+            try
+            {
+                var data = (Dictionary<string, object>)DoListWatchTables(new Dictionary<string, object>());
+                var wts = (List<Dictionary<string, object>>)data["watchTables"];
+                var fts = (List<Dictionary<string, object>>)data["forceTables"];
+
+                Console.WriteLine(L("Устройство: ", "Device: ") + data["deviceName"] + "\n");
+                Console.ForegroundColor = ConsoleColor.Yellow;
+                Console.WriteLine("--- " + L("Таблицы наблюдения (Watch Tables, ", "Watch Tables, count: ") + wts.Count + ") ---");
+                Console.ResetColor();
+                if (wts.Count == 0) Console.WriteLine("  (" + L("нет таблиц наблюдения", "no watch tables") + ")");
+                for (int i = 0; i < wts.Count; i++)
+                {
+                    Console.WriteLine(string.Format("  [{0}] {1} (элементов: {2}, консистентна: {3})", i + 1, wts[i]["path"], wts[i]["entryCount"], wts[i]["isConsistent"]));
+                }
+
+                Console.WriteLine();
+                Console.ForegroundColor = ConsoleColor.Magenta;
+                Console.WriteLine("--- " + L("Таблицы форсирования (Force Tables, ", "Force Tables, count: ") + fts.Count + ") ---");
+                Console.ResetColor();
+                if (fts.Count == 0) Console.WriteLine("  (" + L("нет таблиц форсирования", "no force tables") + ")");
+                for (int i = 0; i < fts.Count; i++)
+                {
+                    Console.WriteLine(string.Format("  [{0}] {1} (элементов: {2})", i + 1, fts[i]["path"], fts[i]["entryCount"]));
+                }
+            }
+            catch (Exception ex)
+            {
+                Console.ForegroundColor = ConsoleColor.Red;
+                Console.WriteLine(L("Ошибка: ", "Error: ") + ex.Message);
+                Console.ResetColor();
+            }
+
+            Console.WriteLine("\n" + L("Нажмите любую клавишу для возврата в меню...", "Press any key to return to menu..."));
+            Console.ReadKey(true);
+            ClearScreen();
+        }
+
+        private static object DoListUdts()
+        {
+            EnsureConnected();
+            var plc = FindPlcSoftware(FindDevice(null));
+            if (plc == null) throw new InvalidOperationException("No PLC found in project.");
+            var udts = new List<Dictionary<string, object>>();
+            CollectTypesRecursive(plc.TypeGroup, udts, "");
+            return udts;
+        }
+
+        private static object DoListWatchTables(Dictionary<string, object> args)
+        {
+            EnsureConnected();
+            string deviceName = args != null && args.ContainsKey("deviceName") && args["deviceName"] != null ? args["deviceName"].ToString() : null;
+            var dev = FindDevice(deviceName);
+            var plc = FindPlcSoftware(dev);
+            if (plc == null) throw new InvalidOperationException("No PLC found in project.");
+
+            var res = new Dictionary<string, object>();
+            var watchList = new List<Dictionary<string, object>>();
+            var forceList = new List<Dictionary<string, object>>();
+
+            if (plc.WatchAndForceTableGroup != null)
+            {
+                CollectWatchTables(plc.WatchAndForceTableGroup, "", watchList, forceList);
+            }
+
+            res["deviceName"] = dev != null ? dev.Name : plc.Name;
+            res["watchTablesCount"] = watchList.Count;
+            res["watchTables"] = watchList;
+            res["forceTablesCount"] = forceList.Count;
+            res["forceTables"] = forceList;
+            return res;
+        }
+
+        private static void CollectWatchTables(PlcWatchAndForceTableGroup group, string currentPath, List<Dictionary<string, object>> watchList, List<Dictionary<string, object>> forceList)
+        {
+            if (group == null) return;
+            string prefix = string.IsNullOrEmpty(currentPath) ? "" : currentPath + "/";
+
+            foreach (PlcWatchTable wt in group.WatchTables)
+            {
+                watchList.Add(new Dictionary<string, object>
+                {
+                    { "name", wt.Name },
+                    { "path", prefix + wt.Name },
+                    { "entryCount", wt.Entries != null ? wt.Entries.Count : 0 },
+                    { "isConsistent", wt.IsConsistent }
+                });
+            }
+
+            foreach (PlcForceTable ft in group.ForceTables)
+            {
+                forceList.Add(new Dictionary<string, object>
+                {
+                    { "name", ft.Name },
+                    { "path", prefix + ft.Name },
+                    { "entryCount", ft.Entries != null ? ft.Entries.Count : 0 },
+                    { "isConsistent", ft.IsConsistent }
+                });
+            }
+
+            foreach (PlcWatchAndForceTableUserGroup sub in group.Groups)
+            {
+                CollectWatchTables(sub, prefix + sub.Name, watchList, forceList);
+            }
+        }
+
+        private static PlcWatchTable FindWatchTableRecursive(PlcWatchAndForceTableGroup group, string name)
+        {
+            if (group == null) return null;
+            foreach (PlcWatchTable wt in group.WatchTables)
+            {
+                if (string.Equals(wt.Name, name, StringComparison.OrdinalIgnoreCase)) return wt;
+            }
+            foreach (PlcWatchAndForceTableUserGroup sub in group.Groups)
+            {
+                var found = FindWatchTableRecursive(sub, name);
+                if (found != null) return found;
+            }
+            return null;
+        }
+
+        private static PlcForceTable FindForceTableRecursive(PlcWatchAndForceTableGroup group, string name)
+        {
+            if (group == null) return null;
+            foreach (PlcForceTable ft in group.ForceTables)
+            {
+                if (string.Equals(ft.Name, name, StringComparison.OrdinalIgnoreCase)) return ft;
+            }
+            foreach (PlcWatchAndForceTableUserGroup sub in group.Groups)
+            {
+                var found = FindForceTableRecursive(sub, name);
+                if (found != null) return found;
+            }
+            return null;
+        }
+
+        private static object DoReadWatchTable(Dictionary<string, object> args)
+        {
+            EnsureConnected();
+            if (args == null || !args.ContainsKey("tableName") || args["tableName"] == null) throw new ArgumentException("Parameter 'tableName' is required.");
+            string tableName = args["tableName"].ToString();
+            string deviceName = args.ContainsKey("deviceName") && args["deviceName"] != null ? args["deviceName"].ToString() : null;
+            var dev = FindDevice(deviceName);
+            var plc = FindPlcSoftware(dev);
+            if (plc == null) throw new InvalidOperationException("No PLC found in project.");
+            if (plc.WatchAndForceTableGroup == null) throw new InvalidOperationException("WatchAndForceTableGroup is not available.");
+
+            PlcWatchTable foundWt = FindWatchTableRecursive(plc.WatchAndForceTableGroup, tableName);
+            if (foundWt != null)
+            {
+                var entries = new List<Dictionary<string, object>>();
+                if (foundWt.Entries != null)
+                {
+                    foreach (PlcWatchTableEntry entry in foundWt.Entries)
+                    {
+                        entries.Add(new Dictionary<string, object>
+                        {
+                            { "name", entry.Name },
+                            { "address", entry.Address },
+                            { "displayFormat", entry.DisplayFormat.ToString() },
+                            { "modifyValue", entry.ModifyValue },
+                            { "modifyTrigger", entry.ModifyTrigger.ToString() },
+                            { "monitorTrigger", entry.MonitorTrigger.ToString() }
+                        });
+                    }
+                }
+                return new Dictionary<string, object>
+                {
+                    { "type", "WatchTable" },
+                    { "name", foundWt.Name },
+                    { "isConsistent", foundWt.IsConsistent },
+                    { "entriesCount", entries.Count },
+                    { "entries", entries }
+                };
+            }
+
+            PlcForceTable foundFt = FindForceTableRecursive(plc.WatchAndForceTableGroup, tableName);
+            if (foundFt != null)
+            {
+                var entries = new List<Dictionary<string, object>>();
+                if (foundFt.Entries != null)
+                {
+                    foreach (PlcForceTableEntry entry in foundFt.Entries)
+                    {
+                        entries.Add(new Dictionary<string, object>
+                        {
+                            { "name", entry.Name },
+                            { "address", entry.Address },
+                            { "displayFormat", entry.DisplayFormat.ToString() },
+                            { "forceValue", entry.ForceValue },
+                            { "forceIntention", entry.ForceIntention.ToString() },
+                            { "monitorTrigger", entry.MonitorTrigger.ToString() }
+                        });
+                    }
+                }
+                return new Dictionary<string, object>
+                {
+                    { "type", "ForceTable" },
+                    { "name", foundFt.Name },
+                    { "isConsistent", foundFt.IsConsistent },
+                    { "entriesCount", entries.Count },
+                    { "entries", entries }
+                };
+            }
+
+            throw new FileNotFoundException("Watch or Force Table '" + tableName + "' not found in PLC software.");
+        }
+
+        private static object DoCrossReferences(Dictionary<string, object> args)
+        {
+            EnsureConnected();
+            string target = args != null && args.ContainsKey("target") && args["target"] != null ? args["target"].ToString().Trim() : "";
+            string filter = args != null && args.ContainsKey("filter") && args["filter"] != null ? args["filter"].ToString().Trim() : "";
+            string deviceName = args != null && args.ContainsKey("deviceName") && args["deviceName"] != null ? args["deviceName"].ToString() : null;
+
+            var plc = FindPlcSoftware(FindDevice(deviceName));
+            if (plc == null) throw new InvalidOperationException("No PLC found in project.");
+
+            HashSet<string> blockNames;
+            Dictionary<string, HashSet<string>> blockCalls;
+            Dictionary<string, HashSet<string>> blockCallers;
+            HashSet<string> reachableFromOB;
+            Dictionary<string, HashSet<string>> tagUsageMap;
+            Dictionary<string, string> blockAddressMap;
+            Dictionary<string, PlcBlock> blockMap;
+            Dictionary<string, string> blockGroupMap;
+            Dictionary<string, string> blockTypeMap;
+            Dictionary<string, int> blockNumberMap;
+
+            BuildProjectTopology(
+                plc,
+                out blockNames,
+                out blockCalls,
+                out blockCallers,
+                out reachableFromOB,
+                out tagUsageMap,
+                out blockAddressMap,
+                out blockMap,
+                out blockGroupMap,
+                out blockTypeMap,
+                out blockNumberMap);
+
+            var res = new Dictionary<string, object>();
+            res["deviceName"] = plc.Name;
+
+            if (string.Equals(filter, "UnusedObjects", StringComparison.OrdinalIgnoreCase) || (string.IsNullOrEmpty(target) && string.IsNullOrEmpty(filter)))
+            {
+                var unusedBlocks = new List<Dictionary<string, object>>();
+                foreach (var bName in blockNames)
+                {
+                    string t = blockTypeMap.ContainsKey(bName) ? blockTypeMap[bName] : "Block";
+                    if (t.Contains("OB")) continue;
+
+                    bool isReachable = reachableFromOB.Contains(bName);
+                    int callers = blockCallers.ContainsKey(bName) ? blockCallers[bName].Count : 0;
+                    if (!isReachable && callers == 0)
+                    {
+                        unusedBlocks.Add(new Dictionary<string, object>
+                        {
+                            { "name", bName },
+                            { "type", t },
+                            { "path", blockGroupMap.ContainsKey(bName) ? blockGroupMap[bName] : bName },
+                            { "address", blockAddressMap.ContainsKey(bName) ? blockAddressMap[bName] : "" }
+                        });
+                    }
+                }
+
+                var unusedTags = new List<Dictionary<string, object>>();
+                try
+                {
+                    if (plc.TagTableGroup != null)
+                    {
+                        var tagTables = new List<Dictionary<string, object>>();
+                        CollectTagsRecursive(plc.TagTableGroup, tagTables, "");
+                        foreach (var td in tagTables)
+                        {
+                            var tags = td["tags"] as List<Dictionary<string, string>>;
+                            if (tags == null) continue;
+                            foreach (var tag in tags)
+                            {
+                                string tName = tag["name"];
+                                if (!tagUsageMap.ContainsKey(tName) || tagUsageMap[tName].Count == 0)
+                                {
+                                    unusedTags.Add(new Dictionary<string, object>
+                                    {
+                                        { "tagTable", td["tableName"] },
+                                        { "name", tName },
+                                        { "dataType", tag["dataType"] },
+                                        { "address", tag["logicalAddress"] }
+                                    });
+                                }
+                            }
+                        }
+                    }
+                }
+                catch { }
+
+                res["filter"] = "UnusedObjects";
+                res["unusedBlocksCount"] = unusedBlocks.Count;
+                res["unusedBlocks"] = unusedBlocks;
+                res["unusedTagsCount"] = unusedTags.Count;
+                res["unusedTags"] = unusedTags;
+                return res;
+            }
+
+            res["target"] = target;
+            var callersList = new List<string>();
+            var calledList = new List<string>();
+            var tagUsedIn = new List<string>();
+
+            if (blockCallers.ContainsKey(target)) callersList.AddRange(blockCallers[target]);
+            if (blockCalls.ContainsKey(target)) calledList.AddRange(blockCalls[target]);
+            if (tagUsageMap.ContainsKey(target)) tagUsedIn.AddRange(tagUsageMap[target]);
+
+            res["isBlock"] = blockNames.Contains(target);
+            res["callers"] = callersList;
+            res["calls"] = calledList;
+            res["accessingBlocks"] = tagUsedIn;
+            res["totalReferences"] = callersList.Count + tagUsedIn.Count;
+            return res;
+        }
+
+        private static object DoTiaDoctor()
+        {
+            var report = new Dictionary<string, object>();
+            var checks = new List<Dictionary<string, object>>();
+            bool allPass = true;
+
+            string opennessDll = "";
+            string opennessVer = "";
+            string[] candidateDirs = new string[]
+            {
+                @"C:\Program Files\Siemens\Automation\Portal V21\PublicAPI\V21\Siemens.Engineering.dll",
+                @"C:\Program Files\Siemens\Automation\Portal V20\PublicAPI\V20\Siemens.Engineering.dll",
+                @"C:\Program Files\Siemens\Automation\Portal V19\PublicAPI\V19\Siemens.Engineering.dll",
+                @"C:\Program Files\Siemens\Automation\Portal V18\PublicAPI\V18\Siemens.Engineering.dll"
+            };
+            foreach (var p in candidateDirs)
+            {
+                if (File.Exists(p))
+                {
+                    opennessDll = p;
+                    try { opennessVer = FileVersionInfo.GetVersionInfo(p).FileVersion; } catch { }
+                    break;
+                }
+            }
+
+            checks.Add(new Dictionary<string, object>
+            {
+                { "check", "Siemens Openness PublicAPI Assembly" },
+                { "status", !string.IsNullOrEmpty(opennessDll) ? "PASS" : "FAIL" },
+                { "path", opennessDll },
+                { "version", opennessVer }
+            });
+            if (string.IsNullOrEmpty(opennessDll)) allPass = false;
+
+            bool inOpennessGroup = false;
+            string userName = "";
+            try
+            {
+                var identity = WindowsIdentity.GetCurrent();
+                userName = identity.Name;
+                foreach (var claim in identity.Groups)
+                {
+                    try
+                    {
+                        string groupName = claim.Translate(typeof(NTAccount)).Value;
+                        if (groupName.IndexOf("Siemens TIA Openness", StringComparison.OrdinalIgnoreCase) >= 0)
+                        {
+                            inOpennessGroup = true;
+                            break;
+                        }
+                    }
+                    catch { }
+                }
+            }
+            catch { }
+
+            checks.Add(new Dictionary<string, object>
+            {
+                { "check", "Siemens TIA Openness User Group Membership" },
+                { "status", inOpennessGroup ? "PASS" : "WARN" },
+                { "user", userName },
+                { "details", inOpennessGroup ? "User is member of 'Siemens TIA Openness'" : "User is NOT member of 'Siemens TIA Openness'." }
+            });
+
+            bool isWhitelisted = false;
+            string exePath = Assembly.GetExecutingAssembly().Location;
+            try
+            {
+                string exeName = Path.GetFileName(exePath);
+                string[] versions = new string[] { "18.0", "19.0", "20.0", "21.0" };
+                foreach (var ver in versions)
+                {
+                    using (var k = Registry.LocalMachine.OpenSubKey(@"SOFTWARE\Siemens\Automation\Openness\" + ver + @"\Whitelist\" + exeName + @"\Entry"))
+                    {
+                        if (k != null) { isWhitelisted = true; break; }
+                    }
+                }
+            }
+            catch { }
+
+            checks.Add(new Dictionary<string, object>
+            {
+                { "check", "Openness Whitelist SHA256 Registration" },
+                { "status", isWhitelisted ? "PASS" : "WARN" },
+                { "exePath", exePath },
+                { "details", isWhitelisted ? "Registered (0 Openness security popups)" : "Not registered in Registry Whitelist. Run build.bat." }
+            });
+
+            var portalProcs = Process.GetProcessesByName("Siemens.Automation.Portal");
+            var plcsimProcs = Process.GetProcessesByName("Siemens.Simatic.PlcSim.V18");
+            var instances = new List<Dictionary<string, object>>();
+            foreach (var p in portalProcs)
+            {
+                try
+                {
+                    instances.Add(new Dictionary<string, object>
+                    {
+                        { "id", p.Id },
+                        { "workingSetMB", p.WorkingSet64 / 1024 / 1024 }
+                    });
+                }
+                catch { }
+            }
+
+            checks.Add(new Dictionary<string, object>
+            {
+                { "check", "Running TIA Portal Instances" },
+                { "status", portalProcs.Length > 0 ? "PASS" : "INFO" },
+                { "count", portalProcs.Length },
+                { "instances", instances },
+                { "plcsimRunning", plcsimProcs.Length > 0 }
+            });
+
+            checks.Add(new Dictionary<string, object>
+            {
+                { "check", "Agent Openness Connection" },
+                { "status", _activeTiaPortal != null ? "CONNECTED" : "STANDBY" },
+                { "attachedPid", _attachedPid },
+                { "project", _activeProject != null ? _activeProject.Name : "(none)" }
+            });
+
+            report["overallStatus"] = allPass ? "READY" : "ATTENTION_REQUIRED";
+            report["agentVersion"] = AGENT_VERSION;
+            report["timestamp"] = DateTime.Now.ToString("yyyy-MM-dd HH:mm:ss");
+            report["checks"] = checks;
+            return report;
+        }
+
+        private static object DoBatchRead(Dictionary<string, object> args)
+        {
+            EnsureConnected();
+            if (args == null || !args.ContainsKey("operations"))
+            {
+                throw new ArgumentException("Parameter 'operations' (array of read operations) is required.");
+            }
+
+            var opsEnum = args["operations"] as System.Collections.IEnumerable;
+            if (opsEnum == null)
+            {
+                throw new ArgumentException("Parameter 'operations' must be an array.");
+            }
+
+            var results = new List<Dictionary<string, object>>();
+            int count = 0;
+
+            foreach (var rawOp in opsEnum)
+            {
+                count++;
+                if (count > 50) break; // Maximum 50 operations per batch
+
+                var opItem = rawOp as Dictionary<string, object>;
+                if (opItem == null) continue;
+
+                string action = "";
+                if (opItem.ContainsKey("action")) action = opItem["action"].ToString();
+                else if (opItem.ContainsKey("operation")) action = opItem["operation"].ToString();
+                else if (opItem.ContainsKey("tool")) action = opItem["tool"].ToString();
+
+                var subArgs = opItem;
+                if (opItem.ContainsKey("arguments") && opItem["arguments"] is Dictionary<string, object>)
+                {
+                    subArgs = (Dictionary<string, object>)opItem["arguments"];
+                }
+
+                var opResult = new Dictionary<string, object>();
+                opResult["index"] = count;
+                opResult["action"] = action;
+
+                try
+                {
+                    object outData = null;
+                    switch (action.ToLowerInvariant().Replace("-", "_"))
+                    {
+                        case "read_scl":
+                        case "tia_read_scl":
+                            outData = DoReadScl(subArgs);
+                            break;
+                        case "read_block_interface":
+                        case "read_interface":
+                        case "tia_read_block_interface":
+                            outData = DoReadBlockInterface(subArgs);
+                            break;
+                        case "list_tags":
+                        case "tia_list_tags":
+                            outData = DoListTags(subArgs);
+                            break;
+                        case "search_blocks":
+                        case "tia_search_blocks":
+                            outData = DoSearchBlocks(subArgs);
+                            break;
+                        case "search_tags":
+                        case "tia_search_tags":
+                            outData = DoSearchTags(subArgs);
+                            break;
+                        case "list_blocks":
+                        case "tia_list_blocks":
+                            outData = DoListBlocks(subArgs);
+                            break;
+                        case "list_devices":
+                        case "tia_list_devices":
+                            outData = DoListDevices();
+                            break;
+                        case "get_project_info":
+                        case "tia_get_project_info":
+                            outData = DoGetProjectInfo();
+                            break;
+                        case "get_hardware_config":
+                        case "tia_get_hardware_config":
+                            var dHw = FindDevice(null);
+                            outData = GetHardwareConfig(dHw, FindPlcSoftware(dHw));
+                            break;
+                        case "get_call_structure":
+                        case "call_tree":
+                        case "tia_get_call_structure":
+                            bool onlyConf = subArgs != null && subArgs.ContainsKey("onlyConflicts") ? Convert.ToBoolean(subArgs["onlyConflicts"]) : false;
+                            outData = GetCallStructure(FindPlcSoftware(FindDevice(null)), onlyConf, true);
+                            break;
+                        case "get_dependency_structure":
+                        case "dependencies":
+                        case "tia_get_dependency_structure":
+                            outData = GetDependencyStructure(FindPlcSoftware(FindDevice(null)));
+                            break;
+                        case "get_memory_resources":
+                        case "memory":
+                        case "tia_get_memory_resources":
+                            var dMem = FindDevice(null);
+                            outData = GetMemoryResources(FindPlcSoftware(dMem), dMem);
+                            break;
+                        case "get_device_params":
+                        case "tia_get_device_params":
+                            outData = DoGetDeviceParams(subArgs);
+                            break;
+                        case "list_udts":
+                        case "tia_list_udts":
+                            outData = DoListUdts();
+                            break;
+                        case "list_watch_tables":
+                        case "tia_list_watch_tables":
+                            outData = DoListWatchTables(subArgs);
+                            break;
+                        case "read_watch_table":
+                        case "tia_read_watch_table":
+                            outData = DoReadWatchTable(subArgs);
+                            break;
+                        case "cross_references":
+                        case "read_cross_references":
+                        case "tia_cross_references":
+                            outData = DoCrossReferences(subArgs);
+                            break;
+                        case "doctor":
+                        case "tia_doctor":
+                        case "get_system_health":
+                        case "tia_get_system_health":
+                            outData = DoTiaDoctor();
+                            break;
+                        case "get_watchdog_status":
+                        case "tia_get_watchdog_status":
+                            outData = _latestWatchdogStatus;
+                            break;
+                        default:
+                            throw new NotSupportedException("Action '" + action + "' is not supported in batch read mode.");
+                    }
+
+                    opResult["status"] = "success";
+                    opResult["data"] = outData;
+                }
+                catch (Exception ex)
+                {
+                    opResult["status"] = "error";
+                    opResult["error"] = ex.Message;
+                }
+
+                results.Add(opResult);
+            }
+
+            return new Dictionary<string, object>
+            {
+                { "totalOperations", results.Count },
+                { "results", results }
+            };
+        }
+
         // --- MCP Tool Definitions ---
 
         // ====================================================================
@@ -9561,6 +10195,23 @@ private static Dictionary<string, object> DoCheckSimulation()
                     case "tia_get_watchdog_status":
                         data = _latestWatchdogStatus;
                         break;
+                    case "tia_batch_read":
+                    case "execute_read_batch":
+                        data = DoBatchRead(args);
+                        break;
+                    case "tia_cross_references":
+                    case "read_cross_references":
+                        data = DoCrossReferences(args);
+                        break;
+                    case "tia_list_watch_tables":
+                        data = DoListWatchTables(args);
+                        break;
+                    case "tia_read_watch_table":
+                        data = DoReadWatchTable(args);
+                        break;
+                    case "tia_doctor":
+                        data = DoTiaDoctor();
+                        break;
                     default:
                         return new JsonRpcResponse
                         {
@@ -9766,6 +10417,31 @@ private static Dictionary<string, object> DoCheckSimulation()
                 { "inputDirectory", new Dictionary<string, object> { { "type", "string" }, { "description", "Source directory." } } }
             }, new List<string> { "inputDirectory" }));
             list.Add(CreateToolDef("tia_get_watchdog_status", "Returns live telemetry from the autonomous project watchdog.", new Dictionary<string, object>()));
+            list.Add(CreateToolDef("tia_batch_read", "Executes up to 50 bundled read operations in a single roundtrip to slash AI conversation tokens and latency by >85%.", new Dictionary<string, object>
+            {
+                { "operations", new Dictionary<string, object>
+                    {
+                        { "type", "array" },
+                        { "description", "List of read operation objects. Each object specifies 'action' (e.g. read_scl, read_interface, list_tags, search_blocks, search_tags, get_project_info, get_hardware_config, get_call_structure, list_watch_tables, cross_references, doctor) and operation-specific parameters." }
+                    }
+                }
+            }, new List<string> { "operations" }));
+            list.Add(CreateToolDef("tia_cross_references", "Inspects cross-references for a symbol/block/tag, or finds all unused objects in project when filter='UnusedObjects'.", new Dictionary<string, object>
+            {
+                { "target", new Dictionary<string, object> { { "type", "string" }, { "description", "Optional symbol name (block, DB, or tag) to find references for." } } },
+                { "filter", new Dictionary<string, object> { { "type", "string" }, { "description", "Filter mode: set to 'UnusedObjects' to discover dead blocks and unreferenced tags." } } },
+                { "deviceName", new Dictionary<string, object> { { "type", "string" }, { "description", "Optional device name." } } }
+            }));
+            list.Add(CreateToolDef("tia_list_watch_tables", "Lists all watch tables and force tables in the PLC software.", new Dictionary<string, object>
+            {
+                { "deviceName", new Dictionary<string, object> { { "type", "string" }, { "description", "Optional device name." } } }
+            }));
+            list.Add(CreateToolDef("tia_read_watch_table", "Reads entries from a specified watch table or force table (Name, Address, DisplayFormat, ModifyValue, Comment).", new Dictionary<string, object>
+            {
+                { "tableName", new Dictionary<string, object> { { "type", "string" }, { "description", "Name of the watch table or force table." } } },
+                { "deviceName", new Dictionary<string, object> { { "type", "string" }, { "description", "Optional device name." } } }
+            }, new List<string> { "tableName" }));
+            list.Add(CreateToolDef("tia_doctor", "Comprehensive environment probe verifying Siemens Openness assembly, user group membership, firewall, and running instances.", new Dictionary<string, object>()));
 
             return list;
         }
@@ -10149,8 +10825,81 @@ private static Dictionary<string, object> DoCheckSimulation()
                         };
                         Console.WriteLine(_serializer.Serialize(DoAddModule(amArgs)));
                         break;
+                    case "doctor":
+                    case "--doctor":
+                        Console.WriteLine(_serializer.Serialize(DoTiaDoctor()));
+                        break;
+                    case "cross-refs":
+                    case "cross-references":
+                    case "--cross-refs":
+                    case "--cross-references":
+                        DoConnectProcess(new Dictionary<string, object>());
+                        var xrArgs = new Dictionary<string, object>();
+                        if (args.Length > 1 && !args[1].StartsWith("--"))
+                        {
+                            if (args[1].Equals("unused", StringComparison.OrdinalIgnoreCase) ||
+                                args[1].Equals("UnusedObjects", StringComparison.OrdinalIgnoreCase))
+                            {
+                                xrArgs["filter"] = "UnusedObjects";
+                            }
+                            else
+                            {
+                                xrArgs["target"] = args[1];
+                            }
+                        }
+                        if (args.Length > 2 && !args[2].StartsWith("--"))
+                        {
+                            xrArgs["filter"] = args[2];
+                        }
+                        Console.WriteLine(_serializer.Serialize(DoCrossReferences(xrArgs)));
+                        break;
+                    case "list-watch-tables":
+                    case "--list-watch-tables":
+                    case "watch-tables":
+                        DoConnectProcess(new Dictionary<string, object>());
+                        var lwtArgs = new Dictionary<string, object>();
+                        if (args.Length > 1 && !args[1].StartsWith("--")) lwtArgs["deviceName"] = args[1];
+                        Console.WriteLine(_serializer.Serialize(DoListWatchTables(lwtArgs)));
+                        break;
+                    case "read-watch-table":
+                    case "--read-watch-table":
+                        DoConnectProcess(new Dictionary<string, object>());
+                        if (args.Length < 2)
+                        {
+                            Console.WriteLine("Usage: read-watch-table <tableName> [deviceName]");
+                            break;
+                        }
+                        var rwtArgs = new Dictionary<string, object>
+                        {
+                            { "tableName", args[1] }
+                        };
+                        if (args.Length > 2 && !args[2].StartsWith("--")) rwtArgs["deviceName"] = args[2];
+                        Console.WriteLine(_serializer.Serialize(DoReadWatchTable(rwtArgs)));
+                        break;
+                    case "batch-read":
+                    case "--batch-read":
+                        DoConnectProcess(new Dictionary<string, object>());
+                        if (args.Length < 2)
+                        {
+                            Console.WriteLine("Usage: batch-read <jsonOperationsOrJsonFilePath>");
+                            break;
+                        }
+                        string jsonInput = args[1];
+                        if (File.Exists(jsonInput)) jsonInput = File.ReadAllText(jsonInput, Encoding.UTF8);
+                        var brRaw = _serializer.DeserializeObject(jsonInput);
+                        var brArgs = new Dictionary<string, object>();
+                        if (brRaw is System.Collections.IEnumerable && !(brRaw is Dictionary<string, object>))
+                        {
+                            brArgs["operations"] = brRaw;
+                        }
+                        else if (brRaw is Dictionary<string, object>)
+                        {
+                            brArgs = (Dictionary<string, object>)brRaw;
+                        }
+                        Console.WriteLine(_serializer.Serialize(DoBatchRead(brArgs)));
+                        break;
                     default:
-                        Console.WriteLine("TiaPortal18Agent v" + AGENT_VERSION + ". Commands: list-processes, test-attach, search-blocks, search-tags, read-interface, read-scl, create-block, call-block, copy-block, archive, zap18, retrieve-archive, get-device-params, set-device-param, add-device, add-module, audit, compile, call-tree, dependencies, memory, hardware, blocks, devices, check-tags, export-tags, export-all, --headless, --watch, --mcp, --json");
+                        Console.WriteLine("TiaPortalAgent v" + AGENT_VERSION + ". Commands: doctor, list-processes, test-attach, search-blocks, search-tags, read-interface, read-scl, batch-read, cross-refs, list-watch-tables, read-watch-table, create-block, call-block, copy-block, archive, zap18, retrieve-archive, get-device-params, set-device-param, add-device, add-module, audit, compile, call-tree, dependencies, memory, hardware, blocks, devices, check-tags, export-tags, export-all, --headless, --watch, --mcp, --json");
                         break;
                 }
             }
