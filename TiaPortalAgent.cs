@@ -6972,7 +6972,7 @@ private static string DoConnectProcess(Dictionary<string, object> args)
                     {
                         string in1 = srcPart.InputPins.ContainsKey("in1") ? resolveWire(srcPart.InputPins["in1"]) : "";
                         string in2 = srcPart.InputPins.ContainsKey("in2") ? resolveWire(srcPart.InputPins["in2"]) : "";
-                        string opSym = "==";
+                        string opSym = "=";
                         if (srcPart.Name == "Ne") opSym = "<>";
                         else if (srcPart.Name == "Lt") opSym = "<";
                         else if (srcPart.Name == "Le") opSym = "<=";
@@ -7002,13 +7002,13 @@ private static string DoConnectProcess(Dictionary<string, object> args)
                 {
                     string inWire = p.InputPins.ContainsKey("in") ? p.InputPins["in"] : null;
                     string cond = resolveWire(inWire);
-                    actionLines.Add(string.Format("IF {0} THEN\n    SET {1};\nEND_IF;", cond, op));
+                    actionLines.Add(string.Format("IF {0} THEN\n    {1} := TRUE;\nEND_IF;", cond, op));
                 }
                 else if (p.Name == "RCoil")
                 {
                     string inWire = p.InputPins.ContainsKey("in") ? p.InputPins["in"] : null;
                     string cond = resolveWire(inWire);
-                    actionLines.Add(string.Format("IF {0} THEN\n    RESET {1};\nEND_IF;", cond, op));
+                    actionLines.Add(string.Format("IF {0} THEN\n    {1} := FALSE;\nEND_IF;", cond, op));
                 }
                 else if (p.Name == "TON" || p.Name == "TOF" || p.Name == "TP")
                 {
