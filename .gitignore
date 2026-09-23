@@ -26,6 +26,7 @@ Hello.exe
 # Local backups and exports
 Backups/
 *.csv
+*.xml
 agent_settings.json
 
 # Temporary scripts & outputs

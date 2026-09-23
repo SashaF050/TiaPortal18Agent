@@ -55,14 +55,15 @@ To minimize LLM token consumption by >90%:
 - `tia_search_blocks`: Fast local search across blocks & UDTs by name/type/path.
 - `tia_search_tags`: Fast local search across tag tables by name/address/comment.
 - `tia_read_block_interface`: Decompiles block/UDT interface into concise SCL declarations (supports `sectionFilter`).
-- `tia_read_scl`: Decompiles SimaticML XML into readable SCL logic (supports `networkNumber` and `outlineOnly`).
+- `tia_read_scl`: Universal decompiler across all programming languages: `SCL`, `LAD`/`KOP`, `FBD`/`FUP`, `STL`/`AWL`. Automatically resolves LAD/FBD wire and contact/coil/timer topologies into clean logic expressions (supports `networkNumber` and `outlineOnly`).
+- Strictly avoid decorative banner comments (`// ======...`, `;======...`). Output clean, single-line headers: `// Network N: Title [Language]`.
 
 ### Watch & Force Tables Inspection
 - `tia_list_watch_tables`: Lists all Watch Tables and Force Tables in the PLC software with entry counts.
 - `tia_read_watch_table`: Reads entries (tag name, address, display format, modify value, trigger) from a specified table.
 
 ### Block Authoring & Invocation
-- `tia_create_block`: Creates and compiles new FC, FB, DB, or UDT from SCL.
+- `tia_create_block`: Creates and compiles new FC, FB, DB, or UDT. Supports multiple languages (`language` parameter): `SCL` (default), `LAD`, `FBD`, `STL`/`AWL` or full SimaticML XML.
 - `tia_copy_block`: Cross-project copy of blocks (FC, FB, DB, OB) or UDTs with recursive dependency auto-copying.
 - `tia_call_block`: Inserts a call to an FB or FC into a caller block:
   - **FB in FB (Multi-Instance / мультивызов)**: Declares instance in caller's `Static` section (`#inst_name : "Callee_FB"`), encapsulating DB inside the caller without global instance DBs.

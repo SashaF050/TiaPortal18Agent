@@ -321,8 +321,11 @@ namespace TiaPortalAgent
     // MAIN ENGINE & WHITELIST
     // ====================================================================
 
-            public class Launcher
+    public class Launcher
     {
+        [DllImport("kernel32.dll", CharSet = CharSet.Auto, SetLastError = true)]
+        public static extern bool SetDllDirectory(string lpPathName);
+
         [STAThread]
         public static void Main(string[] args)
         {
@@ -330,6 +333,30 @@ namespace TiaPortalAgent
             {
                 Console.OutputEncoding = Encoding.UTF8;
                 Console.InputEncoding = Encoding.UTF8;
+            }
+            catch { }
+
+            try
+            {
+                string baseSiemens = @"C:\Program Files\Siemens\Automation";
+                if (Directory.Exists(baseSiemens))
+                {
+                    string[] versions = new string[] { "Portal V18", "Portal V19", "Portal V20", "Portal V21", "Portal V17", "Portal V16", "Portal V15_1", "Portal V15", "Portal V14" };
+                    foreach (var v in versions)
+                    {
+                        string binDir = Path.Combine(baseSiemens, v, "Bin");
+                        if (Directory.Exists(binDir))
+                        {
+                            SetDllDirectory(binDir);
+                            string currentPath = Environment.GetEnvironmentVariable("PATH");
+                            if (string.IsNullOrEmpty(currentPath) || !currentPath.Contains(binDir))
+                            {
+                                Environment.SetEnvironmentVariable("PATH", binDir + ";" + (currentPath ?? ""));
+                            }
+                            break;
+                        }
+                    }
+                }
             }
             catch { }
 
@@ -5939,20 +5966,61 @@ private static void ShowComprehensiveDiagnostics()
             return _latestWatchdogStatus;
         }
 
-private static List<Dictionary<string, object>> DoListProcesses()
+        private static List<Dictionary<string, object>> DoListProcesses()
         {
             var result = new List<Dictionary<string, object>>();
-            var processes = TiaPortal.GetProcesses();
-            foreach (var p in processes)
+            var seenPids = new HashSet<int>();
+
+            try
             {
-                var dict = new Dictionary<string, object>
+                var processes = TiaPortal.GetProcesses();
+                if (processes != null)
                 {
-                    { "pid", p.Id },
-                    { "projectPath", p.ProjectPath != null ? p.ProjectPath.FullName : "" },
-                    { "mode", p.Mode.ToString() }
-                };
-                result.Add(dict);
+                    foreach (var p in processes)
+                    {
+                        seenPids.Add(p.Id);
+                        result.Add(new Dictionary<string, object>
+                        {
+                            { "pid", p.Id },
+                            { "projectPath", p.ProjectPath != null ? p.ProjectPath.FullName : "" },
+                            { "mode", p.Mode.ToString() }
+                        });
+                    }
+                }
             }
+            catch { }
+
+            try
+            {
+                var osProcs = Process.GetProcessesByName("Siemens.Automation.Portal");
+                foreach (var osP in osProcs)
+                {
+                    if (seenPids.Contains(osP.Id)) continue;
+                    seenPids.Add(osP.Id);
+
+                    string projPath = "";
+                    string mode = "WithUserInterface";
+                    try
+                    {
+                        var tp = TiaPortal.GetProcess(osP.Id, 2000);
+                        if (tp != null)
+                        {
+                            projPath = tp.ProjectPath != null ? tp.ProjectPath.FullName : "";
+                            mode = tp.Mode.ToString();
+                        }
+                    }
+                    catch { }
+
+                    result.Add(new Dictionary<string, object>
+                    {
+                        { "pid", osP.Id },
+                        { "projectPath", projPath },
+                        { "mode", mode }
+                    });
+                }
+            }
+            catch { }
+
             return result;
         }
 
@@ -6131,27 +6199,50 @@ private static string DoConnectProcess(Dictionary<string, object> args)
             StartAutoConfirmWatcher();
 
 
-            IList<TiaPortalProcess> procs = null;
-            try {
-                procs = TiaPortal.GetProcesses();
-            } catch (Exception ex) {
-                return "Error accessing TIA Portal processes: " + ex.Message;
-            }
-
-            if (procs == null || procs.Count == 0)
+            var procList = new List<TiaPortalProcess>();
+            var seenPids = new HashSet<int>();
+            try
             {
-                return "Error: No active TIA Portal processes found.";
+                var procs = TiaPortal.GetProcesses();
+                if (procs != null)
+                {
+                    foreach (var p in procs)
+                    {
+                        if (seenPids.Add(p.Id)) procList.Add(p);
+                    }
+                }
             }
+            catch { }
+
+            try
+            {
+                var osProcs = Process.GetProcessesByName("Siemens.Automation.Portal");
+                foreach (var osP in osProcs)
+                {
+                    if (seenPids.Contains(osP.Id)) continue;
+                    try
+                    {
+                        var tp = TiaPortal.GetProcess(osP.Id, 3000);
+                        if (tp != null && seenPids.Add(tp.Id)) procList.Add(tp);
+                    }
+                    catch { }
+                }
+            }
+            catch { }
 
             TiaPortalProcess targetProc = null;
 
             if (pid > 0)
             {
-                targetProc = TiaPortal.GetProcess(pid, 5000);
+                targetProc = procList.FirstOrDefault(p => p.Id == pid);
+                if (targetProc == null)
+                {
+                    try { targetProc = TiaPortal.GetProcess(pid, 5000); } catch { }
+                }
             }
             else if (!string.IsNullOrEmpty(targetProjectName))
             {
-                foreach (var p in procs)
+                foreach (var p in procList)
                 {
                     if (p.ProjectPath != null && p.ProjectPath.FullName.IndexOf(targetProjectName, StringComparison.OrdinalIgnoreCase) >= 0)
                     {
@@ -6163,8 +6254,7 @@ private static string DoConnectProcess(Dictionary<string, object> args)
 
             if (targetProc == null)
             {
-                // Prefer process with open project, especially matching SPS_Mechta or with non-empty ProjectPath
-                foreach (var p in procs)
+                foreach (var p in procList)
                 {
                     if (p.ProjectPath != null && p.ProjectPath.FullName.IndexOf("Mechta", StringComparison.OrdinalIgnoreCase) >= 0)
                     {
@@ -6176,7 +6266,7 @@ private static string DoConnectProcess(Dictionary<string, object> args)
 
             if (targetProc == null)
             {
-                foreach (var p in procs)
+                foreach (var p in procList)
                 {
                     if (p.ProjectPath != null)
                     {
@@ -6186,7 +6276,12 @@ private static string DoConnectProcess(Dictionary<string, object> args)
                 }
             }
 
-            if (targetProc == null) targetProc = procs[0];
+            if (targetProc == null && procList.Count > 0) targetProc = procList[0];
+
+            if (targetProc == null)
+            {
+                return "Error: No active TIA Portal processes found.";
+            }
 
             Log("Attaching to TIA Portal PID " + targetProc.Id + "...");
             _activeTiaPortal = targetProc.Attach();
@@ -6357,35 +6452,87 @@ private static string DoConnectProcess(Dictionary<string, object> args)
                 var doc = new XmlDocument();
                 doc.Load(tempXml);
 
-                var nsMgr = new XmlNamespaceManager(doc.NameTable);
-                nsMgr.AddNamespace("st", "http://www.siemens.com/automation/Openness/SW/NetworkSource/StructuredText/v3");
-
-                var stNodes = doc.SelectNodes("//st:StructuredText", nsMgr);
-                if (stNodes == null || stNodes.Count == 0)
-                {
-                    stNodes = doc.GetElementsByTagName("StructuredText");
-                }
+                var cuList = doc.SelectNodes("//*[contains(local-name(), 'CompileUnit')]");
+                int totalNetworks = cuList != null ? cuList.Count : 0;
 
                 int targetNet = args != null && args.ContainsKey("networkNumber") && args["networkNumber"] != null ? Convert.ToInt32(args["networkNumber"]) : 0;
                 int startNet = args != null && args.ContainsKey("startNetwork") && args["startNetwork"] != null ? Convert.ToInt32(args["startNetwork"]) : 0;
                 int endNet = args != null && args.ContainsKey("endNetwork") && args["endNetwork"] != null ? Convert.ToInt32(args["endNetwork"]) : 0;
                 bool outlineOnly = args != null && args.ContainsKey("outlineOnly") && Convert.ToBoolean(args["outlineOnly"]);
 
-                if (stNodes != null && stNodes.Count > 0)
+                if (totalNetworks > 0)
                 {
                     if (outlineOnly)
                     {
                         var outSb = new StringBuilder();
-                        outSb.AppendLine(string.Format("// Block Outline: {0} (Total Networks: {1})", block.Name, stNodes.Count));
-                        outSb.AppendLine("// ========================================================");
-                        for (int i = 0; i < stNodes.Count; i++)
+                        outSb.AppendLine(string.Format("// Block Outline: {0} (Total Networks: {1})", block.Name, totalNetworks));
+                        for (int i = 0; i < totalNetworks; i++)
                         {
-                            string netTitle = ExtractNetworkTitle(stNodes[i], i + 1);
-                            outSb.AppendLine(string.Format("// Network {0,2}: {1}", i + 1, !string.IsNullOrEmpty(netTitle) ? netTitle : "(Untitled)"));
+                            var cu = cuList[i];
+                            string netTitle = ExtractNetworkTitle(cu, i + 1);
+                            string lang = "SCL";
+                            var lNode = cu.SelectSingleNode(".//*[local-name()='ProgrammingLanguage']");
+                            if (lNode != null && !string.IsNullOrWhiteSpace(lNode.InnerText)) lang = lNode.InnerText.Trim();
+                            outSb.AppendLine(string.Format("// Network {0,2}: {1} [{2}]", i + 1, !string.IsNullOrEmpty(netTitle) ? netTitle : "(Untitled)", lang));
                         }
                         return outSb.ToString().TrimEnd();
                     }
 
+                    var sb = new StringBuilder();
+                    for (int i = 0; i < totalNetworks; i++)
+                    {
+                        int netIndex = i + 1;
+                        if (targetNet > 0 && netIndex != targetNet) continue;
+                        if (startNet > 0 && netIndex < startNet) continue;
+                        if (endNet > 0 && netIndex > endNet) continue;
+
+                        var cu = cuList[i];
+                        string netTitle = ExtractNetworkTitle(cu, netIndex);
+                        string lang = "SCL";
+                        var lNode = cu.SelectSingleNode(".//*[local-name()='ProgrammingLanguage']");
+                        if (lNode != null && !string.IsNullOrWhiteSpace(lNode.InnerText)) lang = lNode.InnerText.Trim();
+
+                        sb.AppendLine(string.Format("// Network {0}: {1} [{2}]", netIndex, !string.IsNullOrEmpty(netTitle) ? netTitle : "(Untitled)", lang));
+
+                        var stNode = cu.SelectSingleNode(".//*[local-name()='StructuredText']");
+                        var flgNode = cu.SelectSingleNode(".//*[local-name()='FlgNet']");
+                        var stlNode = cu.SelectSingleNode(".//*[local-name()='StatementList']");
+
+                        if (stNode != null)
+                        {
+                            DecompileStructuredTextNode(stNode, sb);
+                        }
+                        else if (flgNode != null)
+                        {
+                            DecompileFlgNet(flgNode, sb, lang);
+                        }
+                        else if (stlNode != null)
+                        {
+                            DecompileStructuredTextNode(stlNode, sb);
+                        }
+                        else
+                        {
+                            var netSrc = cu.SelectSingleNode(".//*[local-name()='NetworkSource']");
+                            if (netSrc != null && !string.IsNullOrWhiteSpace(netSrc.InnerText))
+                                sb.AppendLine(netSrc.InnerText.Trim());
+                            else
+                                sb.AppendLine("// [Empty network]");
+                        }
+                        sb.AppendLine();
+                    }
+
+                    if (targetNet > 0 && sb.Length == 0)
+                    {
+                        return string.Format("// Network {0} not found. Block '{1}' has {2} network(s).", targetNet, block.Name, totalNetworks);
+                    }
+
+                    return sb.ToString().TrimEnd();
+                }
+
+                // Fallback for blocks without CompileUnit (e.g. pure StructuredText)
+                var stNodes = doc.GetElementsByTagName("StructuredText");
+                if (stNodes != null && stNodes.Count > 0)
+                {
                     var sb = new StringBuilder();
                     for (int i = 0; i < stNodes.Count; i++)
                     {
@@ -6395,19 +6542,10 @@ private static string DoConnectProcess(Dictionary<string, object> args)
                         if (endNet > 0 && netIndex > endNet) continue;
 
                         string netTitle = ExtractNetworkTitle(stNodes[i], netIndex);
-                        sb.AppendLine("// ========================================================");
-                        sb.AppendLine("// Network " + netIndex + (!string.IsNullOrEmpty(netTitle) ? ": " + netTitle : ""));
-                        sb.AppendLine("// ========================================================");
-
+                        sb.AppendLine(string.Format("// Network {0}: {1} [SCL]", netIndex, !string.IsNullOrEmpty(netTitle) ? netTitle : "(Untitled)"));
                         DecompileStructuredTextNode(stNodes[i], sb);
                         sb.AppendLine();
                     }
-
-                    if (targetNet > 0 && sb.Length == 0)
-                    {
-                        return string.Format("// Network {0} not found. Block '{1}' has {2} network(s).", targetNet, block.Name, stNodes.Count);
-                    }
-
                     return sb.ToString().TrimEnd();
                 }
 
@@ -6497,41 +6635,41 @@ private static string DoConnectProcess(Dictionary<string, object> args)
             }
         }
 
-        private static string ExtractNetworkTitle(XmlNode stNode, int netNum)
+        private static string ExtractNetworkTitle(XmlNode node, int netNum)
         {
             try
             {
-                XmlNode cu = stNode;
-                while (cu != null && cu.LocalName != "CompileUnit") cu = cu.ParentNode;
+                XmlNode cu = node;
+                while (cu != null && !cu.LocalName.Contains("CompileUnit")) cu = cu.ParentNode;
+                if (cu == null) cu = node;
 
-                if (cu != null)
+                var titleNode = cu.SelectSingleNode(".//*[local-name()='MultilingualText'][@CompositionName='Title']//*[local-name()='Text']");
+                if (titleNode != null && !string.IsNullOrWhiteSpace(titleNode.InnerText))
                 {
-                    var titleNode = cu.SelectSingleNode(".//*[local-name()='MultilingualText'][@CompositionName='Title']//*[local-name()='MultilingualTextItem']");
-                    if (titleNode != null && titleNode.Attributes != null && titleNode.Attributes["TextValue"] != null)
-                    {
-                        string tVal = titleNode.Attributes["TextValue"].Value;
-                        if (!string.IsNullOrWhiteSpace(tVal)) return tVal.Trim();
-                    }
-                    var commentNode = cu.SelectSingleNode(".//*[local-name()='MultilingualText'][@CompositionName='Comment']//*[local-name()='MultilingualTextItem']");
-                    if (commentNode != null && commentNode.Attributes != null && commentNode.Attributes["TextValue"] != null)
-                    {
-                        string cVal = commentNode.Attributes["TextValue"].Value;
-                        if (!string.IsNullOrWhiteSpace(cVal)) return cVal.Trim();
-                    }
+                    return titleNode.InnerText.Trim();
                 }
 
-                // If no XML title, peek first line of SCL (look for REGION or // comment)
-                var tempSb = new StringBuilder();
-                DecompileStructuredTextNode(stNode, tempSb);
-                string firstLines = tempSb.ToString();
-                using (var sr = new StringReader(firstLines))
+                var commentNode = cu.SelectSingleNode(".//*[local-name()='MultilingualText'][@CompositionName='Comment']//*[local-name()='Text']");
+                if (commentNode != null && !string.IsNullOrWhiteSpace(commentNode.InnerText))
                 {
-                    string line;
-                    while ((line = sr.ReadLine()) != null)
+                    return commentNode.InnerText.Trim();
+                }
+
+                var stNode = cu.SelectSingleNode(".//*[local-name()='StructuredText']");
+                if (stNode != null)
+                {
+                    var tempSb = new StringBuilder();
+                    DecompileStructuredTextNode(stNode, tempSb);
+                    string firstLines = tempSb.ToString();
+                    using (var sr = new StringReader(firstLines))
                     {
-                        line = line.Trim();
-                        if (line.StartsWith("REGION", StringComparison.OrdinalIgnoreCase)) return line;
-                        if (line.StartsWith("//")) return line.TrimStart('/', ' ');
+                        string line;
+                        while ((line = sr.ReadLine()) != null)
+                        {
+                            line = line.Trim();
+                            if (line.StartsWith("REGION", StringComparison.OrdinalIgnoreCase)) return line;
+                            if (line.StartsWith("//")) return line.TrimStart('/', ' ');
+                        }
                     }
                 }
             }
@@ -6546,6 +6684,7 @@ private static string DoConnectProcess(Dictionary<string, object> args)
                 string local = child.LocalName;
                 if (local == "Symbol")
                 {
+                    bool firstComp = true;
                     foreach (XmlNode symChild in child.ChildNodes)
                     {
                         string sLocal = symChild.LocalName;
@@ -6566,8 +6705,9 @@ private static string DoConnectProcess(Dictionary<string, object> args)
                             }
                             else
                             {
-                                sb.Append(prefix + name);
+                                sb.Append((firstComp ? prefix : "") + name);
                             }
+                            firstComp = false;
                         }
                         else if (sLocal == "Token")
                         {
@@ -6596,6 +6736,307 @@ private static string DoConnectProcess(Dictionary<string, object> args)
                 {
                     DecompileStructuredTextNode(child, sb);
                 }
+            }
+        }
+
+        // ====================================================================
+        // LAD / FBD WIRE & AST DECOMPILER
+        // ====================================================================
+
+        private class FlgPartInfo
+        {
+            public string UId;
+            public string Name;
+            public bool IsNegated;
+            public string OperandUId;
+            public string InstanceName;
+            public int Cardinality;
+            public Dictionary<string, string> InputPins = new Dictionary<string, string>();
+            public Dictionary<string, List<string>> OutputPins = new Dictionary<string, List<string>>();
+        }
+
+        private class FlgWireInfo
+        {
+            public string UId;
+            public bool FromPowerrail;
+            public string FromIdentUId;
+            public string FromPartUId;
+            public string FromPinName;
+            public List<Tuple<string, string>> ToConnections = new List<Tuple<string, string>>();
+        }
+
+        private static void DecompileFlgNet(XmlNode flgNode, StringBuilder sb, string lang)
+        {
+            var operands = new Dictionary<string, string>();
+            var accessNodes = flgNode.SelectNodes(".//*[local-name()='Access']");
+            if (accessNodes != null)
+            {
+                foreach (XmlNode acc in accessNodes)
+                {
+                    if (acc.Attributes == null || acc.Attributes["UId"] == null) continue;
+                    string uid = acc.Attributes["UId"].Value;
+                    string scope = acc.Attributes["Scope"] != null ? acc.Attributes["Scope"].Value : "";
+
+                    var constValNode = acc.SelectSingleNode(".//*[local-name()='ConstantValue']");
+                    if (constValNode != null)
+                    {
+                        operands[uid] = constValNode.InnerText.Trim();
+                        continue;
+                    }
+
+                    var compNodes = acc.SelectNodes(".//*[local-name()='Component']");
+                    if (compNodes != null && compNodes.Count > 0)
+                    {
+                        var parts = new List<string>();
+                        foreach (XmlNode c in compNodes)
+                        {
+                            if (c.Attributes != null && c.Attributes["Name"] != null)
+                            {
+                                parts.Add(c.Attributes["Name"].Value);
+                            }
+                        }
+                        if (scope == "LocalVariable")
+                        {
+                            operands[uid] = "#" + string.Join(".", parts);
+                        }
+                        else
+                        {
+                            operands[uid] = "\"" + string.Join("\".\"", parts) + "\"";
+                        }
+                    }
+                }
+            }
+
+            var partsDict = new Dictionary<string, FlgPartInfo>();
+            var partsNode = flgNode.SelectSingleNode(".//*[local-name()='Parts']");
+            if (partsNode != null)
+            {
+                foreach (XmlNode p in partsNode.ChildNodes)
+                {
+                    if (p.LocalName != "Part") continue;
+                    if (p.Attributes == null || p.Attributes["UId"] == null) continue;
+                    string pUid = p.Attributes["UId"].Value;
+                    string pName = p.Attributes["Name"] != null ? p.Attributes["Name"].Value : "";
+                    var pi = new FlgPartInfo { UId = pUid, Name = pName };
+
+                    if (p.SelectSingleNode(".//*[local-name()='Negated']") != null) pi.IsNegated = true;
+
+                    var instComp = p.SelectSingleNode(".//*[local-name()='Instance']//*[local-name()='Component']");
+                    if (instComp != null && instComp.Attributes != null && instComp.Attributes["Name"] != null)
+                    {
+                        var instScope = instComp.ParentNode != null && instComp.ParentNode.Attributes != null && instComp.ParentNode.Attributes["Scope"] != null ? instComp.ParentNode.Attributes["Scope"].Value : "";
+                        pi.InstanceName = (instScope == "LocalVariable" ? "#" : "\"") + instComp.Attributes["Name"].Value + (instScope == "LocalVariable" ? "" : "\"");
+                    }
+
+                    var cardNode = p.SelectSingleNode(".//*[local-name()='TemplateValue'][@Name='Card']");
+                    if (cardNode != null)
+                    {
+                        int c;
+                        if (int.TryParse(cardNode.InnerText.Trim(), out c)) pi.Cardinality = c;
+                    }
+
+                    partsDict[pUid] = pi;
+                }
+            }
+
+            var wiresList = new List<FlgWireInfo>();
+            var wiresNode = flgNode.SelectSingleNode(".//*[local-name()='Wires']");
+            if (wiresNode != null)
+            {
+                foreach (XmlNode w in wiresNode.ChildNodes)
+                {
+                    if (w.LocalName != "Wire") continue;
+                    string wUid = w.Attributes != null && w.Attributes["UId"] != null ? w.Attributes["UId"].Value : Guid.NewGuid().ToString();
+                    var wi = new FlgWireInfo { UId = wUid };
+
+                    if (w.SelectSingleNode(".//*[local-name()='Powerrail']") != null) wi.FromPowerrail = true;
+
+                    var idCon = w.SelectSingleNode(".//*[local-name()='IdentCon']");
+                    if (idCon != null && idCon.Attributes != null && idCon.Attributes["UId"] != null)
+                    {
+                        wi.FromIdentUId = idCon.Attributes["UId"].Value;
+                    }
+
+                    var nameCons = w.SelectNodes(".//*[local-name()='NameCon']");
+                    if (nameCons != null)
+                    {
+                        foreach (XmlNode nc in nameCons)
+                        {
+                            if (nc.Attributes == null || nc.Attributes["UId"] == null || nc.Attributes["Name"] == null) continue;
+                            string ncUid = nc.Attributes["UId"].Value;
+                            string pin = nc.Attributes["Name"].Value;
+
+                            if (pin == "operand")
+                            {
+                                if (partsDict.ContainsKey(ncUid) && !string.IsNullOrEmpty(wi.FromIdentUId))
+                                {
+                                    partsDict[ncUid].OperandUId = wi.FromIdentUId;
+                                }
+                            }
+                            else if (pin == "out" || pin == "Q" || pin == "ENO" || pin == "ET")
+                            {
+                                wi.FromPartUId = ncUid;
+                                wi.FromPinName = pin;
+                            }
+                            else
+                            {
+                                wi.ToConnections.Add(Tuple.Create(ncUid, pin));
+                            }
+                        }
+                    }
+                    wiresList.Add(wi);
+                }
+            }
+
+            foreach (var wi in wiresList)
+            {
+                foreach (var to in wi.ToConnections)
+                {
+                    if (partsDict.ContainsKey(to.Item1))
+                    {
+                        partsDict[to.Item1].InputPins[to.Item2] = wi.UId;
+                    }
+                }
+                if (!string.IsNullOrEmpty(wi.FromPartUId) && partsDict.ContainsKey(wi.FromPartUId))
+                {
+                    string pin = wi.FromPinName ?? "out";
+                    if (!partsDict[wi.FromPartUId].OutputPins.ContainsKey(pin))
+                    {
+                        partsDict[wi.FromPartUId].OutputPins[pin] = new List<string>();
+                    }
+                    partsDict[wi.FromPartUId].OutputPins[pin].Add(wi.UId);
+                }
+            }
+
+            var wireMap = wiresList.ToDictionary(w => w.UId);
+
+            Func<string, string> resolveWire = null;
+            resolveWire = (wireUId) =>
+            {
+                if (string.IsNullOrEmpty(wireUId) || !wireMap.ContainsKey(wireUId)) return "TRUE";
+                var wi = wireMap[wireUId];
+                if (wi.FromPowerrail) return "TRUE";
+
+                if (!string.IsNullOrEmpty(wi.FromIdentUId))
+                {
+                    return operands.ContainsKey(wi.FromIdentUId) ? operands[wi.FromIdentUId] : ("UId_" + wi.FromIdentUId);
+                }
+
+                if (!string.IsNullOrEmpty(wi.FromPartUId) && partsDict.ContainsKey(wi.FromPartUId))
+                {
+                    var srcPart = partsDict[wi.FromPartUId];
+                    string opName = !string.IsNullOrEmpty(srcPart.OperandUId) && operands.ContainsKey(srcPart.OperandUId)
+                        ? operands[srcPart.OperandUId]
+                        : "";
+
+                    if (srcPart.Name == "Contact")
+                    {
+                        string contactTerm = srcPart.IsNegated ? ("NOT " + opName) : opName;
+                        string prevWire = srcPart.InputPins.ContainsKey("in") ? srcPart.InputPins["in"] : null;
+                        string prevCond = resolveWire(prevWire);
+                        if (prevCond == "TRUE") return contactTerm;
+                        return prevCond + " AND " + contactTerm;
+                    }
+                    else if (srcPart.Name == "O")
+                    {
+                        var orTerms = new List<string>();
+                        var sortedPins = srcPart.InputPins.Keys.Where(k => k.StartsWith("in")).OrderBy(k => k);
+                        foreach (var pinK in sortedPins)
+                        {
+                            string branchCond = resolveWire(srcPart.InputPins[pinK]);
+                            if (!string.IsNullOrEmpty(branchCond) && branchCond != "TRUE") orTerms.Add(branchCond);
+                        }
+                        if (orTerms.Count == 0) return "TRUE";
+                        if (orTerms.Count == 1) return orTerms[0];
+                        return "(" + string.Join(" OR ", orTerms) + ")";
+                    }
+                    else if (srcPart.Name == "A")
+                    {
+                        var andTerms = new List<string>();
+                        var sortedPins = srcPart.InputPins.Keys.Where(k => k.StartsWith("in")).OrderBy(k => k);
+                        foreach (var pinK in sortedPins)
+                        {
+                            string branchCond = resolveWire(srcPart.InputPins[pinK]);
+                            if (!string.IsNullOrEmpty(branchCond) && branchCond != "TRUE") andTerms.Add(branchCond);
+                        }
+                        if (andTerms.Count == 0) return "TRUE";
+                        if (andTerms.Count == 1) return andTerms[0];
+                        return "(" + string.Join(" AND ", andTerms) + ")";
+                    }
+                    else if (srcPart.Name == "TON" || srcPart.Name == "TOF" || srcPart.Name == "TP")
+                    {
+                        string inst = !string.IsNullOrEmpty(srcPart.InstanceName) ? srcPart.InstanceName : ("#Timer_" + srcPart.UId);
+                        return inst + ".Q";
+                    }
+                    else if (srcPart.Name == "Eq" || srcPart.Name == "Ne" || srcPart.Name == "Lt" || srcPart.Name == "Le" || srcPart.Name == "Gt" || srcPart.Name == "Ge")
+                    {
+                        string in1 = srcPart.InputPins.ContainsKey("in1") ? resolveWire(srcPart.InputPins["in1"]) : "";
+                        string in2 = srcPart.InputPins.ContainsKey("in2") ? resolveWire(srcPart.InputPins["in2"]) : "";
+                        string opSym = "==";
+                        if (srcPart.Name == "Ne") opSym = "<>";
+                        else if (srcPart.Name == "Lt") opSym = "<";
+                        else if (srcPart.Name == "Le") opSym = "<=";
+                        else if (srcPart.Name == "Gt") opSym = ">";
+                        else if (srcPart.Name == "Ge") opSym = ">=";
+                        return "(" + in1 + " " + opSym + " " + in2 + ")";
+                    }
+                }
+                return "TRUE";
+            };
+
+            var actionLines = new List<string>();
+
+            foreach (var kvp in partsDict)
+            {
+                var p = kvp.Value;
+                string op = !string.IsNullOrEmpty(p.OperandUId) && operands.ContainsKey(p.OperandUId) ? operands[p.OperandUId] : "";
+
+                if (p.Name == "Coil")
+                {
+                    string inWire = p.InputPins.ContainsKey("in") ? p.InputPins["in"] : null;
+                    string cond = resolveWire(inWire);
+                    if (p.IsNegated) cond = "NOT (" + cond + ")";
+                    actionLines.Add(string.Format("{0} := {1};", op, cond));
+                }
+                else if (p.Name == "SCoil")
+                {
+                    string inWire = p.InputPins.ContainsKey("in") ? p.InputPins["in"] : null;
+                    string cond = resolveWire(inWire);
+                    actionLines.Add(string.Format("IF {0} THEN\n    SET {1};\nEND_IF;", cond, op));
+                }
+                else if (p.Name == "RCoil")
+                {
+                    string inWire = p.InputPins.ContainsKey("in") ? p.InputPins["in"] : null;
+                    string cond = resolveWire(inWire);
+                    actionLines.Add(string.Format("IF {0} THEN\n    RESET {1};\nEND_IF;", cond, op));
+                }
+                else if (p.Name == "TON" || p.Name == "TOF" || p.Name == "TP")
+                {
+                    string inWire = p.InputPins.ContainsKey("IN") ? p.InputPins["IN"] : null;
+                    string cond = resolveWire(inWire);
+                    string ptWire = p.InputPins.ContainsKey("PT") ? p.InputPins["PT"] : null;
+                    string ptVal = resolveWire(ptWire);
+                    string inst = !string.IsNullOrEmpty(p.InstanceName) ? p.InstanceName : ("#Timer_" + p.UId);
+                    actionLines.Add(string.Format("{0}(IN := {1}, PT := {2});", inst, cond, ptVal));
+                }
+                else if (p.Name == "Move")
+                {
+                    string enWire = p.InputPins.ContainsKey("en") ? p.InputPins["en"] : null;
+                    string cond = resolveWire(enWire);
+                    string inVal = p.InputPins.ContainsKey("in") ? resolveWire(p.InputPins["in"]) : "";
+                    string outVal = p.InputPins.ContainsKey("out1") ? resolveWire(p.InputPins["out1"]) : "";
+                    if (cond == "TRUE") actionLines.Add(string.Format("{0} := {1};", outVal, inVal));
+                    else actionLines.Add(string.Format("IF {0} THEN\n    {1} := {2};\nEND_IF;", cond, outVal, inVal));
+                }
+            }
+
+            if (actionLines.Count > 0)
+            {
+                sb.AppendLine(string.Join("\n", actionLines));
+            }
+            else
+            {
+                sb.AppendLine("// [Empty or unhandled LAD network]");
             }
         }
 
@@ -7006,6 +7447,10 @@ private static string DoConnectProcess(Dictionary<string, object> args)
             string blockName = args != null && args.ContainsKey("blockName") ? (args["blockName"] as string ?? "").Trim() : "";
             string code = args != null && args.ContainsKey("code") ? (args["code"] as string ?? "") : "";
             string groupPath = args != null && args.ContainsKey("groupPath") ? (args["groupPath"] as string ?? "").Trim() : "";
+            string language = args != null && args.ContainsKey("language") ? (args["language"] as string ?? "").Trim().ToUpper() : "SCL";
+            if (language == "KOP") language = "LAD";
+            if (language == "FUP") language = "FBD";
+            if (language == "AWL") language = "STL";
 
             if (string.IsNullOrEmpty(blockName)) throw new ArgumentException("blockName is required.");
             if (string.IsNullOrEmpty(code)) throw new ArgumentException("code is required.");
@@ -7013,67 +7458,162 @@ private static string DoConnectProcess(Dictionary<string, object> args)
             Device dev = FindDevice(deviceName);
             var plc = FindPlcSoftware(dev);
 
+            // 1. SimaticML XML direct import (for LAD, FBD, SCL or any XML blocks)
+            string trimmedCode = code.TrimStart();
+            if (trimmedCode.StartsWith("<Document") || trimmedCode.StartsWith("<SW.Blocks.") || trimmedCode.StartsWith("<?xml"))
+            {
+                PlcBlockGroup targetGroup = plc.BlockGroup;
+                if (!string.IsNullOrEmpty(groupPath))
+                {
+                    targetGroup = GetOrCreateBlockGroup(plc.BlockGroup, groupPath) ?? plc.BlockGroup;
+                }
+                string tempXml = Path.Combine(Path.GetTempPath(), "tia_import_" + Guid.NewGuid().ToString("N") + ".xml");
+                try
+                {
+                    File.WriteAllText(tempXml, code, Encoding.UTF8);
+                    targetGroup.Blocks.Import(new FileInfo(tempXml), ImportOptions.Override);
+                    return new Dictionary<string, object>
+                    {
+                        { "status", "Success" },
+                        { "message", "Block '" + blockName + "' successfully imported from SimaticML XML." },
+                        { "blockName", blockName },
+                        { "blockType", blockType },
+                        { "language", language },
+                        { "group", groupPath }
+                    };
+                }
+                catch (Exception ex)
+                {
+                    string err = ex.Message;
+                    if (ex.InnerException != null) err += " -> " + ex.InnerException.Message;
+                    return new Dictionary<string, object>
+                    {
+                        { "status", "ImportError" },
+                        { "error", err },
+                        { "blockName", blockName },
+                        { "blockType", blockType },
+                        { "language", language }
+                    };
+                }
+                finally
+                {
+                    if (File.Exists(tempXml)) try { File.Delete(tempXml); } catch { }
+                }
+            }
+
+            // 2. Text-based source generation (SCL or STL/AWL)
             var sb = new StringBuilder();
-            if (blockType == "FC")
+            string fileExt = ".scl";
+
+            if (language == "STL")
             {
-                if (!code.Contains("FUNCTION"))
+                fileExt = ".awl";
+                if (blockType == "FC")
                 {
-                    sb.AppendLine("FUNCTION \"" + blockName + "\" : Void");
-                    sb.AppendLine("{ S7_Optimized_Access := 'TRUE' }");
-                    sb.AppendLine("VERSION : 0.1");
-                    sb.AppendLine("BEGIN");
-                    sb.AppendLine(code);
-                    sb.AppendLine("END_FUNCTION");
+                    if (!code.Contains("FUNCTION"))
+                    {
+                        sb.AppendLine("FUNCTION \"" + blockName + "\" : Void");
+                        sb.AppendLine("{ S7_Optimized_Access := 'FALSE' }");
+                        sb.AppendLine("VERSION : 0.1");
+                        sb.AppendLine("BEGIN");
+                        sb.AppendLine(code);
+                        sb.AppendLine("END_FUNCTION");
+                    }
+                    else sb.Append(code);
                 }
-                else sb.Append(code);
-            }
-            else if (blockType == "FB")
-            {
-                if (!code.Contains("FUNCTION_BLOCK"))
+                else if (blockType == "FB")
                 {
-                    sb.AppendLine("FUNCTION_BLOCK \"" + blockName + "\"");
-                    sb.AppendLine("{ S7_Optimized_Access := 'TRUE' }");
-                    sb.AppendLine("VERSION : 0.1");
-                    sb.AppendLine("   VAR");
-                    sb.AppendLine("   END_VAR");
-                    sb.AppendLine("BEGIN");
-                    sb.AppendLine(code);
-                    sb.AppendLine("END_FUNCTION_BLOCK");
+                    if (!code.Contains("FUNCTION_BLOCK"))
+                    {
+                        sb.AppendLine("FUNCTION_BLOCK \"" + blockName + "\"");
+                        sb.AppendLine("{ S7_Optimized_Access := 'FALSE' }");
+                        sb.AppendLine("VERSION : 0.1");
+                        sb.AppendLine("   VAR");
+                        sb.AppendLine("   END_VAR");
+                        sb.AppendLine("BEGIN");
+                        sb.AppendLine(code);
+                        sb.AppendLine("END_FUNCTION_BLOCK");
+                    }
+                    else sb.Append(code);
                 }
-                else sb.Append(code);
-            }
-            else if (blockType == "DB")
-            {
-                if (!code.Contains("DATA_BLOCK"))
+                else if (blockType == "DB")
                 {
-                    sb.AppendLine("DATA_BLOCK \"" + blockName + "\"");
-                    sb.AppendLine("{ S7_Optimized_Access := 'TRUE' }");
-                    sb.AppendLine("VERSION : 0.1");
-                    sb.AppendLine(code);
-                    sb.AppendLine("BEGIN");
-                    sb.AppendLine("END_DATA_BLOCK");
-                }
-                else sb.Append(code);
-            }
-            else if (blockType == "UDT")
-            {
-                if (!code.Contains("TYPE"))
-                {
-                    sb.AppendLine("TYPE \"" + blockName + "\"");
-                    sb.AppendLine("VERSION : 0.1");
-                    sb.AppendLine("STRUCT");
-                    sb.AppendLine(code);
-                    sb.AppendLine("END_STRUCT;");
-                    sb.AppendLine("END_TYPE");
+                    if (!code.Contains("DATA_BLOCK"))
+                    {
+                        sb.AppendLine("DATA_BLOCK \"" + blockName + "\"");
+                        sb.AppendLine("VERSION : 0.1");
+                        sb.AppendLine(code);
+                        sb.AppendLine("BEGIN");
+                        sb.AppendLine("END_DATA_BLOCK");
+                    }
+                    else sb.Append(code);
                 }
                 else sb.Append(code);
             }
             else
             {
-                sb.Append(code);
+                // Default: SCL
+                if (blockType == "FC")
+                {
+                    if (!code.Contains("FUNCTION"))
+                    {
+                        sb.AppendLine("FUNCTION \"" + blockName + "\" : Void");
+                        sb.AppendLine("{ S7_Optimized_Access := 'TRUE' }");
+                        sb.AppendLine("VERSION : 0.1");
+                        sb.AppendLine("BEGIN");
+                        sb.AppendLine(code);
+                        sb.AppendLine("END_FUNCTION");
+                    }
+                    else sb.Append(code);
+                }
+                else if (blockType == "FB")
+                {
+                    if (!code.Contains("FUNCTION_BLOCK"))
+                    {
+                        sb.AppendLine("FUNCTION_BLOCK \"" + blockName + "\"");
+                        sb.AppendLine("{ S7_Optimized_Access := 'TRUE' }");
+                        sb.AppendLine("VERSION : 0.1");
+                        sb.AppendLine("   VAR");
+                        sb.AppendLine("   END_VAR");
+                        sb.AppendLine("BEGIN");
+                        sb.AppendLine(code);
+                        sb.AppendLine("END_FUNCTION_BLOCK");
+                    }
+                    else sb.Append(code);
+                }
+                else if (blockType == "DB")
+                {
+                    if (!code.Contains("DATA_BLOCK"))
+                    {
+                        sb.AppendLine("DATA_BLOCK \"" + blockName + "\"");
+                        sb.AppendLine("{ S7_Optimized_Access := 'TRUE' }");
+                        sb.AppendLine("VERSION : 0.1");
+                        sb.AppendLine(code);
+                        sb.AppendLine("BEGIN");
+                        sb.AppendLine("END_DATA_BLOCK");
+                    }
+                    else sb.Append(code);
+                }
+                else if (blockType == "UDT")
+                {
+                    if (!code.Contains("TYPE"))
+                    {
+                        sb.AppendLine("TYPE \"" + blockName + "\"");
+                        sb.AppendLine("VERSION : 0.1");
+                        sb.AppendLine("STRUCT");
+                        sb.AppendLine(code);
+                        sb.AppendLine("END_STRUCT;");
+                        sb.AppendLine("END_TYPE");
+                    }
+                    else sb.Append(code);
+                }
+                else
+                {
+                    sb.Append(code);
+                }
             }
 
-            string tempFile = Path.Combine(Path.GetTempPath(), "tia_src_" + Guid.NewGuid().ToString("N") + ".scl");
+            string tempFile = Path.Combine(Path.GetTempPath(), "tia_src_" + Guid.NewGuid().ToString("N") + fileExt);
             File.WriteAllText(tempFile, sb.ToString(), new UTF8Encoding(true));
 
             PlcExternalSource extSource = null;
@@ -7117,6 +7657,7 @@ private static string DoConnectProcess(Dictionary<string, object> args)
                     { "message", "Block '" + blockName + "' successfully created and compiled." },
                     { "blockName", blockName },
                     { "blockType", blockType },
+                    { "language", language },
                     { "group", groupPath }
                 };
             }
@@ -7130,6 +7671,7 @@ private static string DoConnectProcess(Dictionary<string, object> args)
                     { "error", err },
                     { "blockName", blockName },
                     { "blockType", blockType },
+                    { "language", language },
                     { "submittedCode", sb.ToString() }
                 };
             }
@@ -10293,7 +10835,7 @@ private static Dictionary<string, object> DoCheckSimulation()
                 { "xmlFilePath", new Dictionary<string, object> { { "type", "string" }, { "description", "Absolute path to the XML file." } } },
                 { "groupPath", new Dictionary<string, object> { { "type", "string" }, { "description", "Target block group path e.g. '10_Logic'." } } }
             }, new List<string> { "xmlFilePath" }));
-            list.Add(CreateToolDef("tia_read_scl", "Decompiles SimaticML XML into readable Structured Text (SCL) logic with selective network filtering to save tokens.", new Dictionary<string, object>
+            list.Add(CreateToolDef("tia_read_scl", "Decompiles SimaticML XML into readable Structured Text (SCL) or decompiles LAD/FBD/STL networks with selective network filtering to save tokens.", new Dictionary<string, object>
             {
                 { "blockPath", new Dictionary<string, object> { { "type", "string" }, { "description", "Block path e.g. 'Main'." } } },
                 { "networkNumber", new Dictionary<string, object> { { "type", "integer" }, { "description", "Optional 1-based network number. When specified, returns ONLY that network, reducing token consumption by >90%." } } },
@@ -10319,12 +10861,13 @@ private static Dictionary<string, object> DoCheckSimulation()
                 { "query", new Dictionary<string, object> { { "type", "string" }, { "description", "Search query for tag name, address or comment." } } },
                 { "tableName", new Dictionary<string, object> { { "type", "string" }, { "description", "Optional tag table name filter." } } }
             }));
-            list.Add(CreateToolDef("tia_create_block", "Creates and compiles a new block (FC, FB, DB) or UDT into TIA Portal project using native SCL code.", new Dictionary<string, object>
+            list.Add(CreateToolDef("tia_create_block", "Creates and compiles a new block (FC, FB, DB) or UDT into TIA Portal project. Supports SCL, LAD, FBD, STL (or SimaticML XML).", new Dictionary<string, object>
             {
                 { "blockType", new Dictionary<string, object> { { "type", "string" }, { "description", "Type of block: 'FC', 'FB', 'DB', or 'UDT'." } } },
                 { "blockName", new Dictionary<string, object> { { "type", "string" }, { "description", "Name of the block to create (e.g. 'Conv_Control_FC')." } } },
-                { "code", new Dictionary<string, object> { { "type", "string" }, { "description", "SCL code (declarations and/or logic)." } } },
-                { "groupPath", new Dictionary<string, object> { { "type", "string" }, { "description", "Optional target block folder/group e.g. '10_Logic'." } } }
+                { "code", new Dictionary<string, object> { { "type", "string" }, { "description", "SCL/STL code or full SimaticML XML for LAD/FBD." } } },
+                { "groupPath", new Dictionary<string, object> { { "type", "string" }, { "description", "Optional target block folder/group e.g. '10_Logic'." } } },
+                { "language", new Dictionary<string, object> { { "type", "string" }, { "description", "Optional programming language: 'SCL' (default), 'LAD', 'FBD', 'STL'. SCL is default." } } }
             }, new List<string> { "blockType", "blockName", "code" }));
             list.Add(CreateToolDef("tia_delete_block", "Deletes a block (FC, FB, DB) or UDT from the project by name or path.", new Dictionary<string, object>
             {
