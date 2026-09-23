@@ -57,6 +57,11 @@ To minimize LLM token consumption by >90%:
 - `tia_read_block_interface`: Decompiles block/UDT interface into concise SCL declarations (supports `sectionFilter`).
 - `tia_read_scl`: Universal decompiler across all programming languages: `SCL`, `LAD`/`KOP`, `FBD`/`FUP`, `STL`/`AWL`. Automatically resolves LAD/FBD wire and contact/coil/timer topologies into clean logic expressions (supports `networkNumber` and `outlineOnly`).
 - Strictly avoid decorative banner comments (`// ======...`, `;======...`). Output clean, single-line headers: `// Network N: Title [Language]`.
+- **Strict Siemens SCL (IEC 61131-3 & TIA Help F1) Syntax**:
+  - No `SET` / `RESET` keywords in SCL. Set/Reset coils must be translated as:
+    `IF <condition> THEN <tag> := TRUE; END_IF;` (for `SCoil`) and `IF <condition> THEN <tag> := FALSE; END_IF;` (for `RCoil`).
+  - Equality comparison operator in SCL is `=` (never `==`). Inequality is `<>`. Assignment is `:=`.
+  - Block calls format: `"<BlockName>"(Param1 := <val>, ...);` or `#instName(IN := <cond>, PT := <time>);`.
 
 ### Watch & Force Tables Inspection
 - `tia_list_watch_tables`: Lists all Watch Tables and Force Tables in the PLC software with entry counts.
